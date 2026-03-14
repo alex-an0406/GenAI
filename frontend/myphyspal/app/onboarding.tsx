@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAppStore, Plan } from '@/store/use-store';
+import { supabase } from '../lib/supabase';
+import { saveOnboardingData, createProfile } from '../lib/profile';
 
 type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
 
@@ -12,6 +14,7 @@ export default function OnboardingScreen() {
   const { profile, setProfile, addPlan } = useAppStore();
   const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
   const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: profile?.name || '',
     diagnosis: '',
@@ -27,34 +30,68 @@ export default function OnboardingScreen() {
     setStep('FORM');
   };
 
-  const handleFinishOnboarding = () => {
-    // If we don't have a profile yet, save it
-    if (!profile) {
-      setProfile({
+  const handleFinishOnboarding = async () => {
+    setLoading(true);
+
+    try {
+      // Get logged in user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to continue');
+        router.replace('/login');
+        return;
+      }
+
+      // Make sure profile row exists
+      await createProfile(user.id, user.email ?? '');
+
+      // Save onboarding data to Supabase
+      await saveOnboardingData(user.id, {
         name: formData.name,
         age: formData.age,
         weight: formData.weight,
         height: formData.height,
+        hasDiagnosis: hasDiagnosis ?? false,
+        diagnosis: formData.diagnosis,
+        painDescription: formData.painDescription,
+        painLevel: formData.painLevel,
       });
+
+      console.log('✅ Onboarding data saved to Supabase!');
+
+      // Also save to local store
+      if (!profile) {
+        setProfile({
+          name: formData.name,
+          age: formData.age,
+          weight: formData.weight,
+          height: formData.height,
+        });
+      }
+
+      // Create a new plan locally
+      const newPlan: Plan = {
+        id: Date.now().toString(),
+        title: hasDiagnosis ? formData.diagnosis : 'Pain Management',
+        startDate: new Date().toLocaleDateString(),
+        active: true,
+        type: hasDiagnosis ? 'diagnosis' : 'pain',
+        details: hasDiagnosis ? formData.diagnosis : formData.painDescription,
+        painLevel: formData.painLevel,
+      };
+
+      addPlan(newPlan);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.error('Error saving onboarding:', error);
+      Alert.alert('Error', 'Failed to save your profile. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    // Create a new plan
-    const newPlan: Plan = {
-      id: Date.now().toString(),
-      title: hasDiagnosis ? formData.diagnosis : 'Pain Management',
-      startDate: new Date().toLocaleDateString(),
-      active: true,
-      type: hasDiagnosis ? 'diagnosis' : 'pain',
-      details: hasDiagnosis ? formData.diagnosis : formData.painDescription,
-      painLevel: formData.painLevel,
-    };
-
-    addPlan(newPlan);
-    
-    console.log('Generating plan with data:', formData);
-    router.replace('/(tabs)');
   };
 
+  // ============ ASK DIAGNOSIS SCREEN ============
   if (step === 'ASK_DIAGNOSIS') {
     return (
       <ThemedView style={styles.container}>
@@ -66,15 +103,15 @@ export default function OnboardingScreen() {
           </ThemedText>
 
           <View style={styles.choiceContainer}>
-            <TouchableOpacity 
-              style={[styles.choiceButton, { backgroundColor: '#007AFF' }]} 
+            <TouchableOpacity
+              style={[styles.choiceButton, { backgroundColor: '#007AFF' }]}
               onPress={() => handleDiagnosisChoice(true)}
             >
               <ThemedText style={styles.choiceText}>Yes, I have one</ThemedText>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.choiceButton, { backgroundColor: '#333' }]} 
+
+            <TouchableOpacity
+              style={[styles.choiceButton, { backgroundColor: '#333' }]}
               onPress={() => handleDiagnosisChoice(false)}
             >
               <ThemedText style={styles.choiceText}>No, describe pain</ThemedText>
@@ -85,6 +122,7 @@ export default function OnboardingScreen() {
     );
   }
 
+  // ============ FORM SCREEN ============
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer}>
       <ThemedView style={styles.formContent}>
@@ -94,16 +132,16 @@ export default function OnboardingScreen() {
         </TouchableOpacity>
 
         <ThemedText type="title">New Recovery Plan</ThemedText>
-        
+
         {!profile && (
           <ThemedView style={styles.inputGroup}>
             <ThemedText type="defaultSemiBold">Full Name</ThemedText>
-            <TextInput 
-              style={styles.input} 
-              placeholder="John Doe" 
+            <TextInput
+              style={styles.input}
+              placeholder="John Doe"
               placeholderTextColor="#888"
               value={formData.name}
-              onChangeText={(t) => setFormData({...formData, name: t})}
+              onChangeText={(t) => setFormData({ ...formData, name: t })}
             />
           </ThemedView>
         )}
@@ -111,24 +149,24 @@ export default function OnboardingScreen() {
         {hasDiagnosis ? (
           <ThemedView style={styles.inputGroup}>
             <ThemedText type="defaultSemiBold">What is your diagnosis?</ThemedText>
-            <TextInput 
-              style={styles.input} 
-              placeholder="e.g. Meniscus Tear, Tennis Elbow" 
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Meniscus Tear, Tennis Elbow"
               placeholderTextColor="#888"
               value={formData.diagnosis}
-              onChangeText={(t) => setFormData({...formData, diagnosis: t})}
+              onChangeText={(t) => setFormData({ ...formData, diagnosis: t })}
             />
           </ThemedView>
         ) : (
           <ThemedView style={styles.inputGroup}>
             <ThemedText type="defaultSemiBold">Describe your pain</ThemedText>
-            <TextInput 
-              style={[styles.input, { height: 100 }]} 
-              placeholder="Where does it hurt? When did it start?" 
+            <TextInput
+              style={[styles.input, { height: 100 }]}
+              placeholder="Where does it hurt? When did it start?"
               placeholderTextColor="#888"
               multiline
               value={formData.painDescription}
-              onChangeText={(t) => setFormData({...formData, painDescription: t})}
+              onChangeText={(t) => setFormData({ ...formData, painDescription: t })}
             />
           </ThemedView>
         )}
@@ -138,37 +176,37 @@ export default function OnboardingScreen() {
             <View style={styles.row}>
               <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
                 <ThemedText type="defaultSemiBold">Age</ThemedText>
-                <TextInput 
-                  style={styles.input} 
+                <TextInput
+                  style={styles.input}
                   keyboardType="numeric"
-                  placeholder="30" 
+                  placeholder="30"
                   placeholderTextColor="#888"
                   value={formData.age}
-                  onChangeText={(t) => setFormData({...formData, age: t})}
+                  onChangeText={(t) => setFormData({ ...formData, age: t })}
                 />
               </ThemedView>
               <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
                 <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
-                <TextInput 
-                  style={styles.input} 
+                <TextInput
+                  style={styles.input}
                   keyboardType="numeric"
-                  placeholder="75" 
+                  placeholder="75"
                   placeholderTextColor="#888"
                   value={formData.weight}
-                  onChangeText={(t) => setFormData({...formData, weight: t})}
+                  onChangeText={(t) => setFormData({ ...formData, weight: t })}
                 />
               </ThemedView>
             </View>
 
             <ThemedView style={styles.inputGroup}>
               <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
-              <TextInput 
-                style={styles.input} 
+              <TextInput
+                style={styles.input}
                 keyboardType="numeric"
-                placeholder="180" 
+                placeholder="180"
                 placeholderTextColor="#888"
                 value={formData.height}
-                onChangeText={(t) => setFormData({...formData, height: t})}
+                onChangeText={(t) => setFormData({ ...formData, height: t })}
               />
             </ThemedView>
           </>
@@ -178,14 +216,14 @@ export default function OnboardingScreen() {
           <ThemedText type="defaultSemiBold">Current Pain Level: {formData.painLevel}/10</ThemedText>
           <View style={styles.painSelector}>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={level}
                 style={[
-                  styles.painCircle, 
+                  styles.painCircle,
                   formData.painLevel === level && styles.selectedPainCircle,
                   { backgroundColor: getPainColor(level, formData.painLevel === level) }
                 ]}
-                onPress={() => setFormData({...formData, painLevel: level})}
+                onPress={() => setFormData({ ...formData, painLevel: level })}
               >
                 <ThemedText style={styles.painText}>{level}</ThemedText>
               </TouchableOpacity>
@@ -193,8 +231,14 @@ export default function OnboardingScreen() {
           </View>
         </ThemedView>
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleFinishOnboarding}>
-          <ThemedText style={styles.submitButtonText}>Generate My Plan</ThemedText>
+        <TouchableOpacity
+          style={[styles.submitButton, loading && { opacity: 0.6 }]}
+          onPress={handleFinishOnboarding}
+          disabled={loading}
+        >
+          <ThemedText style={styles.submitButtonText}>
+            {loading ? 'Saving...' : 'Generate My Plan'}
+          </ThemedText>
         </TouchableOpacity>
       </ThemedView>
     </ScrollView>
