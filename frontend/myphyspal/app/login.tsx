@@ -12,6 +12,8 @@ import { hasCompletedOnboarding } from '../lib/profile';
 import { supabase } from '../lib/supabase';
 import { useRouter } from 'expo-router';
 
+import { makeRedirectUri } from 'expo-auth-session';
+
 export default function LoginScreen() {
     const [loading, setLoading] = useState(false);
     const router = useRouter();
@@ -42,6 +44,12 @@ export default function LoginScreen() {
             setLoading(false);
         }
     };
+
+    const redirectUri = makeRedirectUri({
+        scheme: 'myapp',
+        path: 'google-auth',
+    });
+    console.log('🔗 Redirect URI:', redirectUri);
 
     return (
         <View style={styles.container}>
