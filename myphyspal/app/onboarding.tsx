@@ -1,202 +1,153 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useAppStore, Plan } from '@/store/use-store';
-
-type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { updateProfile } from '../lib/profile';
+import { getCurrentUser } from '../lib/auth';
+import { useRouter } from 'expo-router';
 
 export default function OnboardingScreen() {
-  const { profile, setProfile, addPlan } = useAppStore();
-  const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
-  const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
-  const [formData, setFormData] = useState({
-    name: profile?.name || '',
-    diagnosis: '',
-    painDescription: '',
-    age: profile?.age || '',
-    weight: profile?.weight || '',
-    height: profile?.height || '',
-    painLevel: 5,
-  });
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [age, setAge] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  const [weightKg, setWeightKg] = useState('');
+  const [injuryType, setInjuryType] = useState('');
+  const [injuryDescription, setInjuryDescription] = useState('');
+  const [timeSinceInjury, setTimeSinceInjury] = useState('');
+  const [painLevel, setPainLevel] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleDiagnosisChoice = (choice: boolean) => {
-    setHasDiagnosis(choice);
-    setStep('FORM');
-  };
 
-  const handleFinishOnboarding = () => {
-    // If we don't have a profile yet, save it
-    if (!profile) {
-      setProfile({
-        name: formData.name,
-        age: formData.age,
-        weight: formData.weight,
-        height: formData.height,
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      const user = await getCurrentUser();
+      if (!user) throw new Error('Not authenticated');
+
+      await updateProfile(user.id, {
+        first_name: firstName,
+        last_name: lastName,
+        age: parseInt(age) || undefined,
+        height_cm: parseFloat(heightCm) || undefined,
+        weight_kg: parseFloat(weightKg) || undefined,
+        injury_type: injuryType,
+        injury_description: injuryDescription,
+        time_since_injury: timeSinceInjury,
+        pain_level: parseInt(painLevel) || undefined,
       });
+
+      Alert.alert('Profile Saved!', 'Your profile has been set up.', [
+        { text: 'OK', onPress: () => router.replace('/') },  // Goes to main tabs
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
     }
-
-    // Create a new plan
-    const newPlan: Plan = {
-      id: Date.now().toString(),
-      title: hasDiagnosis ? formData.diagnosis : 'Pain Management',
-      startDate: new Date().toLocaleDateString(),
-      active: true,
-      type: hasDiagnosis ? 'diagnosis' : 'pain',
-      details: hasDiagnosis ? formData.diagnosis : formData.painDescription,
-      painLevel: formData.painLevel,
-    };
-
-    addPlan(newPlan);
-    
-    console.log('Generating plan with data:', formData);
-    router.replace('/(tabs)');
   };
-
-  if (step === 'ASK_DIAGNOSIS') {
-    return (
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.centerContent}>
-          <IconSymbol size={80} name="doc.text.magnifyingglass" color="#007AFF" />
-          <ThemedText type="title" style={styles.title}>Do you have a diagnosis?</ThemedText>
-          <ThemedText style={styles.subtitle}>
-            If a doctor has already diagnosed your condition, let us know. Otherwise, describe your pain.
-          </ThemedText>
-
-          <View style={styles.choiceContainer}>
-            <TouchableOpacity 
-              style={[styles.choiceButton, { backgroundColor: '#007AFF' }]} 
-              onPress={() => handleDiagnosisChoice(true)}
-            >
-              <ThemedText style={styles.choiceText}>Yes, I have one</ThemedText>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.choiceButton, { backgroundColor: '#333' }]} 
-              onPress={() => handleDiagnosisChoice(false)}
-            >
-              <ThemedText style={styles.choiceText}>No, describe pain</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </ThemedView>
-      </ThemedView>
-    );
-  }
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <ThemedView style={styles.formContent}>
-        <TouchableOpacity onPress={() => setStep('ASK_DIAGNOSIS')} style={styles.backButton}>
-          <IconSymbol size={20} name="chevron.left" color="#007AFF" />
-          <ThemedText style={styles.backText}>Back</ThemedText>
-        </TouchableOpacity>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Tell Us About You 📋</Text>
+      <Text style={styles.subtitle}>
+        This helps us create a personalized physio plan
+      </Text>
 
-        <ThemedText type="title">New Recovery Plan</ThemedText>
-        
-        {!profile && (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Full Name</ThemedText>
-            <TextInput 
-              style={styles.input} 
-              placeholder="John Doe" 
-              placeholderTextColor="#888"
-              value={formData.name}
-              onChangeText={(t) => setFormData({...formData, name: t})}
-            />
-          </ThemedView>
-        )}
+      <Text style={styles.label}>First Name</Text>
+      <TextInput
+        style={styles.input}
+        value={firstName}
+        onChangeText={setFirstName}
+        placeholder="John"
+      />
 
-        {hasDiagnosis ? (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">What is your diagnosis?</ThemedText>
-            <TextInput 
-              style={styles.input} 
-              placeholder="e.g. Meniscus Tear, Tennis Elbow" 
-              placeholderTextColor="#888"
-              value={formData.diagnosis}
-              onChangeText={(t) => setFormData({...formData, diagnosis: t})}
-            />
-          </ThemedView>
-        ) : (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Describe your pain</ThemedText>
-            <TextInput 
-              style={[styles.input, { height: 100 }]} 
-              placeholder="Where does it hurt? When did it start?" 
-              placeholderTextColor="#888"
-              multiline
-              value={formData.painDescription}
-              onChangeText={(t) => setFormData({...formData, painDescription: t})}
-            />
-          </ThemedView>
-        )}
+      <Text style={styles.label}>Last Name</Text>
+      <TextInput
+        style={styles.input}
+        value={lastName}
+        onChangeText={setLastName}
+        placeholder="Doe"
+      />
 
-        {!profile && (
-          <>
-            <View style={styles.row}>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Age</ThemedText>
-                <TextInput 
-                  style={styles.input} 
-                  keyboardType="numeric"
-                  placeholder="30" 
-                  placeholderTextColor="#888"
-                  value={formData.age}
-                  onChangeText={(t) => setFormData({...formData, age: t})}
-                />
-              </ThemedView>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
-                <TextInput 
-                  style={styles.input} 
-                  keyboardType="numeric"
-                  placeholder="75" 
-                  placeholderTextColor="#888"
-                  value={formData.weight}
-                  onChangeText={(t) => setFormData({...formData, weight: t})}
-                />
-              </ThemedView>
-            </View>
+      <Text style={styles.label}>Age</Text>
+      <TextInput
+        style={styles.input}
+        value={age}
+        onChangeText={setAge}
+        placeholder="25"
+        keyboardType="numeric"
+      />
 
-            <ThemedView style={styles.inputGroup}>
-              <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
-              <TextInput 
-                style={styles.input} 
-                keyboardType="numeric"
-                placeholder="180" 
-                placeholderTextColor="#888"
-                value={formData.height}
-                onChangeText={(t) => setFormData({...formData, height: t})}
-              />
-            </ThemedView>
-          </>
-        )}
+      <Text style={styles.label}>Height (cm)</Text>
+      <TextInput
+        style={styles.input}
+        value={heightCm}
+        onChangeText={setHeightCm}
+        placeholder="175"
+        keyboardType="numeric"
+      />
 
-        <ThemedView style={styles.inputGroup}>
-          <ThemedText type="defaultSemiBold">Current Pain Level: {formData.painLevel}/10</ThemedText>
-          <View style={styles.painSelector}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-              <TouchableOpacity 
-                key={level}
-                style={[
-                  styles.painCircle, 
-                  formData.painLevel === level && styles.selectedPainCircle,
-                  { backgroundColor: getPainColor(level, formData.painLevel === level) }
-                ]}
-                onPress={() => setFormData({...formData, painLevel: level})}
-              >
-                <ThemedText style={styles.painText}>{level}</ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ThemedView>
+      <Text style={styles.label}>Weight (kg)</Text>
+      <TextInput
+        style={styles.input}
+        value={weightKg}
+        onChangeText={setWeightKg}
+        placeholder="70"
+        keyboardType="numeric"
+      />
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleFinishOnboarding}>
-          <ThemedText style={styles.submitButtonText}>Generate My Plan</ThemedText>
-        </TouchableOpacity>
-      </ThemedView>
+      <Text style={styles.label}>Type of Injury</Text>
+      <TextInput
+        style={styles.input}
+        value={injuryType}
+        onChangeText={setInjuryType}
+        placeholder="e.g., ACL tear, Back strain, etc."
+      />
+
+      <Text style={styles.label}>Describe Your Injury</Text>
+      <TextInput
+        style={[styles.input, styles.textArea]}
+        value={injuryDescription}
+        onChangeText={setInjuryDescription}
+        placeholder="Tell us more about your injury..."
+        multiline
+        numberOfLines={4}
+      />
+
+      <Text style={styles.label}>Time Since Injury</Text>
+      <TextInput
+        style={styles.input}
+        value={timeSinceInjury}
+        onChangeText={setTimeSinceInjury}
+        placeholder="e.g., 2 weeks, 3 months"
+      />
+
+      <Text style={styles.label}>Pain Level (1-10)</Text>
+      <TextInput
+        style={styles.input}
+        value={painLevel}
+        onChangeText={setPainLevel}
+        placeholder="5"
+        keyboardType="numeric"
+      />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleSaveProfile}
+        disabled={loading}
+      >
+        <Text style={styles.buttonText}>
+          {loading ? 'Saving...' : 'Save & Continue'}
+        </Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -212,106 +163,56 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
-    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
   },
-  scrollContainer: {
-    flexGrow: 1,
-    backgroundColor: '#121212',
-  },
-  centerContent: {
-    alignItems: 'center',
-    gap: 20,
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 40,
+    marginBottom: 8,
+    color: '#2D6A4F',
   },
   title: {
     textAlign: 'center',
     marginTop: 10,
   },
   subtitle: {
+    fontSize: 14,
     textAlign: 'center',
-    fontSize: 16,
-    opacity: 0.7,
-    paddingHorizontal: 20,
-    lineHeight: 22,
+    marginBottom: 32,
+    color: '#666',
   },
-  choiceContainer: {
-    width: '100%',
-    gap: 15,
-    marginTop: 20,
-  },
-  choiceButton: {
-    padding: 20,
-    borderRadius: 15,
-    alignItems: 'center',
-  },
-  choiceText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  formContent: {
-    padding: 20,
-    paddingTop: 60,
-    gap: 20,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 10,
-  },
-  backText: {
-    color: '#007AFF',
-    fontSize: 16,
-  },
-  inputGroup: {
-    gap: 8,
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#333',
   },
   input: {
-    backgroundColor: '#1E1E1E',
-    color: '#fff',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 15,
+    padding: 16,
+    marginBottom: 16,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#ddd',
   },
-  row: {
-    flexDirection: 'row',
-    gap: 15,
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
   },
-  painSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 5,
-  },
-  painCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 18,
-    justifyContent: 'center',
+  button: {
+    backgroundColor: '#2D6A4F',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  selectedPainCircle: {
-    borderColor: '#fff',
-    borderWidth: 2,
-  },
-  painText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  submitButton: {
-    backgroundColor: '#007AFF',
-    padding: 20,
-    borderRadius: 15,
-    alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
     marginBottom: 40,
   },
   submitButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
     fontSize: 18,
+    fontWeight: 'bold',
   },
 });
