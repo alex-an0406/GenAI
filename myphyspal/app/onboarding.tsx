@@ -1,111 +1,207 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, ScrollView, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { updateProfile } from '../lib/profile';
+import { getCurrentUser } from '../lib/auth';
+import { useRouter } from 'expo-router';
 
 export default function OnboardingScreen() {
-  const [formData, setFormData] = useState({
-    name: '',
-    condition: '',
-    painLevel: '5',
-    goals: '',
-  });
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [age, setAge] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  const [weightKg, setWeightKg] = useState('');
+  const [injuryType, setInjuryType] = useState('');
+  const [injuryDescription, setInjuryDescription] = useState('');
+  const [timeSinceInjury, setTimeSinceInjury] = useState('');
+  const [painLevel, setPainLevel] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleFinishOnboarding = () => {
-    // ---------------------------------------------------------
-    // BACKEND INTEGRATION POINT:
-    // POST /register { ...formData }
-    // The backend should trigger the LLM here to generate the initial plan.
-    // ---------------------------------------------------------
-    console.log('Sending onboarding data to FastAPI/LLM...', formData);
-    router.replace('/(tabs)');
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      const user = await getCurrentUser();
+      if (!user) throw new Error('Not authenticated');
+
+      await updateProfile(user.id, {
+        first_name: firstName,
+        last_name: lastName,
+        age: parseInt(age) || undefined,
+        height_cm: parseFloat(heightCm) || undefined,
+        weight_kg: parseFloat(weightKg) || undefined,
+        injury_type: injuryType,
+        injury_description: injuryDescription,
+        time_since_injury: timeSinceInjury,
+        pain_level: parseInt(painLevel) || undefined,
+      });
+
+      Alert.alert('Profile Saved!', 'Your profile has been set up.', [
+        { text: 'OK', onPress: () => router.replace('/') },  // Goes to main tabs
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <ThemedView style={styles.content}>
-        <ThemedText type="title">Welcome to MyPhysPal</ThemedText>
-        <ThemedText style={styles.subtitle}>Let's customize your recovery plan.</ThemedText>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Tell Us About You 📋</Text>
+      <Text style={styles.subtitle}>
+        This helps us create a personalized physio plan
+      </Text>
 
-        <ThemedView style={styles.inputGroup}>
-          <ThemedText type="defaultSemiBold">What's your name?</ThemedText>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Name" 
-            placeholderTextColor="#888"
-            value={formData.name}
-            onChangeText={(t) => setFormData({...formData, name: t})}
-          />
-        </ThemedView>
+      <Text style={styles.label}>First Name</Text>
+      <TextInput
+        style={styles.input}
+        value={firstName}
+        onChangeText={setFirstName}
+        placeholder="John"
+      />
 
-        <ThemedView style={styles.inputGroup}>
-          <ThemedText type="defaultSemiBold">Describe your condition or pain:</ThemedText>
-          <TextInput 
-            style={[styles.input, { height: 80 }]} 
-            placeholder="e.g. Knee ACL surgery recovery" 
-            placeholderTextColor="#888"
-            multiline
-            value={formData.condition}
-            onChangeText={(t) => setFormData({...formData, condition: t})}
-          />
-        </ThemedView>
+      <Text style={styles.label}>Last Name</Text>
+      <TextInput
+        style={styles.input}
+        value={lastName}
+        onChangeText={setLastName}
+        placeholder="Doe"
+      />
 
-        <ThemedView style={styles.inputGroup}>
-          <ThemedText type="defaultSemiBold">Current pain level (1-10):</ThemedText>
-          <TextInput 
-            style={styles.input} 
-            keyboardType="numeric"
-            placeholder="5" 
-            placeholderTextColor="#888"
-            value={formData.painLevel}
-            onChangeText={(t) => setFormData({...formData, painLevel: t})}
-          />
-        </ThemedView>
+      <Text style={styles.label}>Age</Text>
+      <TextInput
+        style={styles.input}
+        value={age}
+        onChangeText={setAge}
+        placeholder="25"
+        keyboardType="numeric"
+      />
 
-        <TouchableOpacity style={styles.button} onPress={handleFinishOnboarding}>
-          <ThemedText style={styles.buttonText}>Generate My Plan (LLM)</ThemedText>
-        </TouchableOpacity>
-      </ThemedView>
+      <Text style={styles.label}>Height (cm)</Text>
+      <TextInput
+        style={styles.input}
+        value={heightCm}
+        onChangeText={setHeightCm}
+        placeholder="175"
+        keyboardType="numeric"
+      />
+
+      <Text style={styles.label}>Weight (kg)</Text>
+      <TextInput
+        style={styles.input}
+        value={weightKg}
+        onChangeText={setWeightKg}
+        placeholder="70"
+        keyboardType="numeric"
+      />
+
+      <Text style={styles.label}>Type of Injury</Text>
+      <TextInput
+        style={styles.input}
+        value={injuryType}
+        onChangeText={setInjuryType}
+        placeholder="e.g., ACL tear, Back strain, etc."
+      />
+
+      <Text style={styles.label}>Describe Your Injury</Text>
+      <TextInput
+        style={[styles.input, styles.textArea]}
+        value={injuryDescription}
+        onChangeText={setInjuryDescription}
+        placeholder="Tell us more about your injury..."
+        multiline
+        numberOfLines={4}
+      />
+
+      <Text style={styles.label}>Time Since Injury</Text>
+      <TextInput
+        style={styles.input}
+        value={timeSinceInjury}
+        onChangeText={setTimeSinceInjury}
+        placeholder="e.g., 2 weeks, 3 months"
+      />
+
+      <Text style={styles.label}>Pain Level (1-10)</Text>
+      <TextInput
+        style={styles.input}
+        value={painLevel}
+        onChangeText={setPainLevel}
+        placeholder="5"
+        keyboardType="numeric"
+      />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleSaveProfile}
+        disabled={loading}
+      >
+        <Text style={styles.buttonText}>
+          {loading ? 'Saving...' : 'Save & Continue'}
+        </Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    flex: 1,
     padding: 20,
-    backgroundColor: '#121212',
+    backgroundColor: '#f5f5f5',
   },
-  content: {
-    marginTop: 60,
-    gap: 20,
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 40,
+    marginBottom: 8,
+    color: '#2D6A4F',
   },
   subtitle: {
-    fontSize: 18,
-    opacity: 0.7,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 32,
+    color: '#666',
   },
-  inputGroup: {
-    gap: 8,
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#333',
   },
   input: {
-    backgroundColor: '#1E1E1E',
-    color: '#fff',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 15,
+    padding: 16,
+    marginBottom: 16,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#ddd',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
   },
   button: {
-    backgroundColor: '#007AFF',
-    padding: 20,
-    borderRadius: 15,
+    backgroundColor: '#2D6A4F',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
+    marginBottom: 40,
   },
   buttonText: {
     color: '#fff',
-    fontWeight: 'bold',
     fontSize: 18,
+    fontWeight: 'bold',
   },
 });
