@@ -1,38 +1,176 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Query, Path, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Dict, Any
 
-app = FastAPI(title="Physio AI API")
+# Our custom packages
+from supabase_client import supabase  # Import our initialized Supabase client
 
+# Initialize the FastAPI application
+app = FastAPI(
+    title="Fizio MVP Backend",
+    description="Backend for Fizio, an AI-powered physiotherapy app.",
+    version="1.1.0"
+)
 
-# Define the exact JSON structure your frontend will send
-class PoseData(BaseModel):
+# Configure CORS to allow all origins, methods, and headers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Pydantic Models ---
+
+class UserProfile(BaseModel):
+    height_cm: float
+    weight_kg: float
+    age: int
+    gender: str
+    surgery_history: str
+    time_since_injury_days: int
+
+class PlanGenerateRequest(BaseModel):
     user_id: str
-    exercise_type: str
-    angles: list[float]  # e.g., [knee_angle, hip_angle, back_angle]
+    profile: UserProfile
 
+class Feedback(BaseModel):
+    ease_score: int
+    weekly_soreness_score: int
+    completed_exercises: List[str]
 
-@app.get("/")
-def read_root():
-    return {"status": "healthy", "message": "Backend is live."}
+class MetricsRequest(BaseModel):
+    user_id: str
+    plan_id: str
+    feedback: Feedback
 
+class EvaluateFormRequest(BaseModel):
+    user_id: str
+    exercise: str
+    angles: List[float]
 
-@app.post("/evaluate-form")
-def evaluate_form(data: PoseData):
-    # This is where your AI logic will eventually go.
-    # For now, let's just return dummy feedback to prove the pipes are connected.
+# --- Endpoints ---
 
-    if not data.angles:
-        raise HTTPException(status_code=400, detail="No angle data provided")
+@app.post("/api/plans/generate")
+async def generate_plan(request: PlanGenerateRequest):
+    """
+    Generates a new exercise plan based on user profile and saves it to Supabase.
+    """
+    # Construct the initial plan_data
+    plan_data = {
+        "momentum_score": 100,
+        "weekly_soreness_score": 0,
+        "exercises": [
+            {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
+            {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
+        ],
+        "profile_snapshot": request.profile.dict()
+    }
 
-    feedback = "Good form."
+    # Perform the insert into the 'plans' table
+    try:
+        response = supabase.table("plans").insert({
+            "user_id": request.user_id,
+            "status": "active",
+            "plan_data": plan_data
+        }).execute()
 
-    # Dummy rule-based check
-    if data.exercise_type.lower() == "squat" and data.angles[0] < 90.0:
-        feedback = "Knee angle too acute. Don't go so deep."
+        # Extract the inserted row
+        new_plan = response.data[0]
+        return {
+            "plan_id": new_plan["id"],
+            "status": new_plan["status"],
+            "plan_data": new_plan["plan_data"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/plans/{plan_id}")
+async def get_plan(
+    plan_id: str = Path(..., description="The ID of the plan to fetch"),
+    user_id: str = Query(..., description="The ID of the user requesting the plan")
+):
+    """
+    Fetches the current state of a plan from Supabase.
+    """
+    try:
+        # Perform a select where id == plan_id AND user_id == user_id
+        response = supabase.table("plans") \
+            .select("plan_data") \
+            .eq("id", plan_id) \
+            .eq("user_id", user_id) \
+            .execute()
+
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Plan not found for this user.")
+
+        # Return the plan_data JSONB object
+        return response.data[0]["plan_data"]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/metrics")
+async def submit_metrics(request: MetricsRequest):
+    """
+    Receives workout feedback, adjusts plan_data dynamically, and updates Supabase.
+    """
+    try:
+        # 1. Fetch the existing plan
+        response = supabase.table("plans") \
+            .select("plan_data") \
+            .eq("id", request.plan_id) \
+            .execute()
+
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Plan not found.")
+
+        plan_data = response.data[0]["plan_data"]
+
+        # 2. Simulate Dynamic AI adjustment: 
+        # Modify momentum based on soreness and ease score
+        current_momentum = plan_data.get("momentum_score", 100)
+        soreness_deduction = request.feedback.weekly_soreness_score * 2
+        new_momentum = max(0, current_momentum - soreness_deduction)
+
+        # Update the dictionary
+        plan_data["momentum_score"] = new_momentum
+        plan_data["weekly_soreness_score"] = request.feedback.weekly_soreness_score
+        
+        # 3. Perform an update back to the database
+        supabase.table("plans") \
+            .update({"plan_data": plan_data}) \
+            .eq("id", request.plan_id) \
+            .execute()
+
+        return {
+            "status": "success",
+            "plans_updated": [request.plan_id]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/evaluate-form")
+async def evaluate_form(request: EvaluateFormRequest):
+    """
+    Purely computational endpoint for live form feedback (no DB calls).
+    """
+    # Dummy logic check for Knee extension
+    if request.exercise.lower() == "knee extension" and request.angles:
+        first_angle = request.angles[0]
+        if first_angle < 90:
+            return {
+                "feedback_text": "Extend your knee a bit further",
+                "is_rep_valid": False
+            }
+
+    # Default success response
     return {
-        "status": "success",
-        "user_id": data.user_id,
-        "exercise": data.exercise_type,
-        "feedback": feedback
+        "feedback_text": "Good form",
+        "is_rep_valid": True
     }
