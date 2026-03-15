@@ -81,35 +81,52 @@ class FormEvaluationResponse(BaseModel):
 @app.post("/api/plans/generate", response_model=PlanResponse)
 async def generate_plan(request: PlanGenerateRequest):
     """
-    Generates a new exercise plan based on user profile and saves it to Supabase.
+    Ensures user profile exists, then generates and saves a new exercise plan.
     """
-    # Construct the initial plan_data
-    plan_data = {
-        "momentum_score": 100,
-        "weekly_soreness_score": 0,
-        "exercises": [
-            {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
-            {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
-        ],
-        "profile_snapshot": request.profile.dict()
-    }
-
-    # Perform the insert into the 'plans' table
     try:
+        # 1. Ensure the user profile exists in the 'profiles' table
+        # We 'upsert' to handle both new users and profile updates
+        supabase.table("profiles").upsert({
+            "id": request.user_id,
+            "age": request.profile.age,
+            "weight_kg": request.profile.weight_kg,
+            "height_cm": request.profile.height_cm,
+            "gender": request.profile.gender,  # Added!
+            "surgery_history": request.profile.surgery_history,  # Added!
+            "time_since_injury_days": request.profile.time_since_injury_days,  # Added!
+            "onboarding_completed": True,
+            "updated_at": "now()"
+        }).execute()
+
+        # 2. Construct the initial plan_data
+        plan_data = {
+            "momentum_score": 100,
+            "weekly_soreness_score": 0,
+            "exercises": [
+                {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
+                {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
+            ],
+            "profile_snapshot": request.profile.dict()
+        }
+
+        # 3. Insert into the 'plans' table
         response = supabase.table("plans").insert({
             "user_id": request.user_id,
             "status": "active",
             "plan_data": plan_data
         }).execute()
 
-        # Extract the inserted row
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to create plan record.")
+
         new_plan = response.data[0]
         return {
-            "plan_id": new_plan["id"],
+            "plan_id": str(new_plan["id"]),
             "status": new_plan["status"],
             "plan_data": new_plan["plan_data"]
         }
     except Exception as e:
+        print(f"Error in generate_plan: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/plans/{plan_id}", response_model=PlanData)
