@@ -1,19 +1,24 @@
-from fastapi import FastAPI, Query, Path, HTTPException
+from fastapi import FastAPI, Query, Path, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import time
 
-# Our custom packages
-from supabase_client import supabase  # Import our initialized Supabase client
+# Robust import for the Supabase client
+try:
+    from supabase_client import supabase
+except ImportError:
+    from .supabase_client import supabase
 
-# Initialize the FastAPI application
+from llm import generate_personalized_exercises  # AI Generation logic
+
 app = FastAPI(
     title="Fizio MVP Backend",
-    description="Backend for Fizio, an AI-powered physiotherapy app.",
-    version="1.1.0"
+    description="Synchronized Backend with Full Database Schema",
+    version="1.2.0"
 )
 
-# Configure CORS to allow all origins, methods, and headers
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,12 +30,17 @@ app.add_middleware(
 # --- Pydantic Models ---
 
 class UserProfile(BaseModel):
+    name: str
     height_cm: float
     weight_kg: float
     age: int
     gender: str
     surgery_history: str
     time_since_injury_days: int
+    has_diagnosis: bool
+    diagnosis: Optional[str] = None
+    pain_description: str
+    pain_level: int
 
 class Exercise(BaseModel):
     name: str
@@ -81,35 +91,39 @@ class FormEvaluationResponse(BaseModel):
 @app.post("/api/plans/generate", response_model=PlanResponse)
 async def generate_plan(request: PlanGenerateRequest):
     """
-    Ensures user profile exists, then generates and saves a new exercise plan.
+    Ensures user profile exists with full details, then generates and saves a new AI exercise plan.
     """
     try:
-        # 1. Ensure the user profile exists in the 'profiles' table
-        # We 'upsert' to handle both new users and profile updates
+        # 1. Update the 'profiles' table with all new fields
         supabase.table("profiles").upsert({
             "id": request.user_id,
+            "name": request.profile.name,
             "age": request.profile.age,
+            "gender": request.profile.gender,
             "weight_kg": request.profile.weight_kg,
             "height_cm": request.profile.height_cm,
-            "gender": request.profile.gender,  # Added!
-            "surgery_history": request.profile.surgery_history,  # Added!
-            "time_since_injury_days": request.profile.time_since_injury_days,  # Added!
+            "surgery_history": request.profile.surgery_history,
+            "time_since_injury_days": request.profile.time_since_injury_days,
+            "has_diagnosis": request.profile.has_diagnosis,
+            "diagnosis": request.profile.diagnosis,
+            "pain_description": request.profile.pain_description,
+            "pain_level": request.profile.pain_level,
             "onboarding_completed": True,
             "updated_at": "now()"
         }).execute()
 
-        # 2. Construct the initial plan_data
+        # 2. Call AI to generate personalized exercises based on full profile
+        ai_exercises = await generate_personalized_exercises(request.profile)
+
+        # 3. Construct the final plan_data
         plan_data = {
             "momentum_score": 100,
             "weekly_soreness_score": 0,
-            "exercises": [
-                {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
-                {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
-            ],
+            "exercises": [ex.dict() for ex in ai_exercises],
             "profile_snapshot": request.profile.dict()
         }
 
-        # 3. Insert into the 'plans' table
+        # 4. Insert into the 'plans' table
         response = supabase.table("plans").insert({
             "user_id": request.user_id,
             "status": "active",
@@ -134,11 +148,7 @@ async def get_plan(
     plan_id: str = Path(..., description="The ID of the plan to fetch"),
     user_id: str = Query(..., description="The ID of the user requesting the plan")
 ):
-    """
-    Fetches the current state of a plan from Supabase.
-    """
     try:
-        # Perform a select where id == plan_id AND user_id == user_id
         response = supabase.table("plans") \
             .select("plan_data") \
             .eq("id", plan_id) \
@@ -148,7 +158,6 @@ async def get_plan(
         if not response.data:
             raise HTTPException(status_code=404, detail="Plan not found for this user.")
 
-        # Return the plan_data JSONB object
         return response.data[0]["plan_data"]
     except HTTPException:
         raise
@@ -157,41 +166,22 @@ async def get_plan(
 
 @app.post("/api/metrics", response_model=MetricsResponse)
 async def submit_metrics(request: MetricsRequest):
-    """
-    Receives workout feedback, adjusts plan_data dynamically, and updates Supabase.
-    """
     try:
-        # 1. Fetch the existing plan
-        response = supabase.table("plans") \
-            .select("plan_data") \
-            .eq("id", request.plan_id) \
-            .execute()
-
+        response = supabase.table("plans").select("plan_data").eq("id", request.plan_id).execute()
         if not response.data:
             raise HTTPException(status_code=404, detail="Plan not found.")
 
         plan_data = response.data[0]["plan_data"]
-
-        # 2. Simulate Dynamic AI adjustment: 
-        # Modify momentum based on soreness and ease score
         current_momentum = plan_data.get("momentum_score", 100)
         soreness_deduction = request.feedback.weekly_soreness_score * 2
         new_momentum = max(0, current_momentum - soreness_deduction)
 
-        # Update the dictionary
         plan_data["momentum_score"] = new_momentum
         plan_data["weekly_soreness_score"] = request.feedback.weekly_soreness_score
         
-        # 3. Perform an update back to the database
-        supabase.table("plans") \
-            .update({"plan_data": plan_data}) \
-            .eq("id", request.plan_id) \
-            .execute()
+        supabase.table("plans").update({"plan_data": plan_data}).eq("id", request.plan_id).execute()
 
-        return {
-            "status": "success",
-            "plans_updated": [request.plan_id]
-        }
+        return {"status": "success", "plans_updated": [request.plan_id]}
     except HTTPException:
         raise
     except Exception as e:
@@ -199,20 +189,7 @@ async def submit_metrics(request: MetricsRequest):
 
 @app.post("/api/evaluate-form", response_model=FormEvaluationResponse)
 async def evaluate_form(request: EvaluateFormRequest):
-    """
-    Purely computational endpoint for live form feedback (no DB calls).
-    """
-    # Dummy logic check for Knee extension
     if request.exercise.lower() == "knee extension" and request.angles:
-        first_angle = request.angles[0]
-        if first_angle < 90:
-            return {
-                "feedback_text": "Extend your knee a bit further",
-                "is_rep_valid": False
-            }
-
-    # Default success response
-    return {
-        "feedback_text": "Good form",
-        "is_rep_valid": True
-    }
+        if request.angles[0] < 90:
+            return {"feedback_text": "Extend your knee a bit further", "is_rep_valid": False}
+    return {"feedback_text": "Good form", "is_rep_valid": True}

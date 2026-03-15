@@ -3,17 +3,22 @@
 import { supabase } from './supabase';
 
 // --- Base URL ---
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://fizio-ownu.onrender.com";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 
 // --- Interfaces matching backend Pydantic models ---
 
 export interface UserProfile {
+    name: string;
     height_cm: number;
     weight_kg: number;
     age: number;
     gender: string;
     surgery_history: string;
     time_since_injury_days: number;
+    has_diagnosis: boolean;
+    diagnosis?: string;
+    pain_description: string;
+    pain_level: number;
 }
 
 export interface Feedback {
@@ -82,9 +87,6 @@ const getHeaders = async (): Promise<HeadersInit> => {
 /**
  * 1. Generate a new exercise plan
  * POST /api/plans/generate
- *
- * Usage:
- *   const plan = await generatePlan("user-uuid", { height_cm: 180, weight_kg: 75, ... });
  */
 export const generatePlan = async (userId: string, profile: UserProfile): Promise<PlanResponse> => {
     const response = await fetch(`${API_BASE_URL}/api/plans/generate`, {
@@ -106,10 +108,6 @@ export const generatePlan = async (userId: string, profile: UserProfile): Promis
 
 /**
  * 2. Fetch an existing plan
- * GET /api/plans/{plan_id}?user_id={user_id}
- *
- * Usage:
- *   const planData = await getPlan("plan-uuid", "user-uuid");
  */
 export const getPlan = async (planId: string, userId: string): Promise<PlanData> => {
     const response = await fetch(
@@ -130,14 +128,6 @@ export const getPlan = async (planId: string, userId: string): Promise<PlanData>
 
 /**
  * 3. Submit workout feedback / metrics
- * POST /api/metrics
- *
- * Usage:
- *   const result = await submitMetrics("user-uuid", "plan-uuid", {
- *     ease_score: 7,
- *     weekly_soreness_score: 3,
- *     completed_exercises: ["Knee Extension", "Straight Leg Raise"]
- *   });
  */
 export const submitMetrics = async (
     userId: string,
@@ -163,11 +153,7 @@ export const submitMetrics = async (
 };
 
 /**
- * 4. Evaluate exercise form (live feedback, no DB calls)
- * POST /api/evaluate-form
- *
- * Usage:
- *   const formFeedback = await evaluateForm("user-uuid", "Knee Extension", [85.5, 90.2]);
+ * 4. Evaluate exercise form
  */
 export const evaluateForm = async (
     userId: string,
