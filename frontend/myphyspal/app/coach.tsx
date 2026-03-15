@@ -1,25 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Video, ResizeMode } from 'expo-av';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PostWorkoutSurvey } from '@/components/post-workout-survey';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function CoachScreen() {
-  const [permission, requestPermission] = useCameraPermissions();
   const [isCoaching, setIsCoaching] = useState(false);
   const [currentAngle, setCurrentAngle] = useState(180);
   const [showSurvey, setShowSurvey] = useState(false);
+  const videoRef = useRef<Video>(null);
 
-  useEffect(() => {
-    if (!permission) {
-      requestPermission();
+  const handleStartCoaching = async () => {
+    setIsCoaching(true);
+    if (videoRef.current) {
+      await videoRef.current.playAsync();
     }
-  }, [permission]);
+  };
 
-  const handleStopCoaching = () => {
+  const handleStopCoaching = async () => {
+    if (videoRef.current) {
+      await videoRef.current.stopAsync();
+    }
     setIsCoaching(false);
     setShowSurvey(true);
   };
@@ -29,31 +33,6 @@ export default function CoachScreen() {
     setShowSurvey(false);
     router.back();
   };
-
-  if (!permission) {
-    return (
-      <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </ThemedView>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.centerContent}>
-          <IconSymbol size={60} name="camera.fill" color="#888" />
-          <ThemedText style={styles.errorText}>Camera access is required for AI Coaching</ThemedText>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-            <ThemedText style={styles.buttonText}>Grant Permission</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()} style={{marginTop: 20}}>
-            <ThemedText style={{color: '#007AFF'}}>Go Back</ThemedText>
-          </TouchableOpacity>
-        </View>
-      </ThemedView>
-    );
-  }
 
   return (
     <ThemedView style={styles.container}>
@@ -68,22 +47,33 @@ export default function CoachScreen() {
       </ThemedView>
 
       <View style={styles.cameraContainer}>
-        <CameraView 
-          style={styles.camera} 
-          facing="front"
-        >
-          {isCoaching && (
-            <View style={styles.overlay}>
-              <ThemedText style={styles.angleText}>Knee Angle: {currentAngle}°</ThemedText>
-              <ThemedText style={styles.guidanceText}>"Keep your back straight"</ThemedText>
-            </View>
-          )}
-        </CameraView>
+        <Video
+          ref={videoRef}
+          style={styles.camera}
+          source={require('../assets/videos/GenAIdemo (online-video-cutter.com).mp4')}
+          useNativeControls={false}
+          resizeMode={ResizeMode.COVER}
+          isLooping
+          onPlaybackStatusUpdate={status => {
+            if (!status.isLoaded) return;
+            // Simulated angle change during coaching for realism
+            if (isCoaching && status.isPlaying) {
+              const newAngle = 170 + Math.floor(Math.random() * 20);
+              setCurrentAngle(newAngle);
+            }
+          }}
+        />
+        {isCoaching && (
+          <View style={styles.overlay}>
+            <ThemedText style={styles.angleText}>Knee Angle: {currentAngle}°</ThemedText>
+            <ThemedText style={styles.guidanceText}>"Keep your back straight"</ThemedText>
+          </View>
+        )}
       </View>
 
       <TouchableOpacity 
         style={[styles.button, isCoaching ? styles.stopButton : styles.startButton]}
-        onPress={isCoaching ? handleStopCoaching : () => setIsCoaching(true)}
+        onPress={isCoaching ? handleStopCoaching : handleStartCoaching}
       >
         <ThemedText style={styles.buttonText}>
           {isCoaching ? 'STOP & COMPLETE' : 'START LIVE SESSION'}
@@ -104,12 +94,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 60,
     paddingHorizontal: 20,
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 15,
   },
   header: {
     flexDirection: 'row',
@@ -165,16 +149,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 18,
-  },
-  errorText: {
-    textAlign: 'center',
-    opacity: 0.7,
-    paddingHorizontal: 40,
-  },
-  permissionButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 10,
   }
 });
