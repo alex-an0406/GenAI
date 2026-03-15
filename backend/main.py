@@ -103,8 +103,10 @@ async def generate_plan(request: PlanGenerateRequest):
             "momentum_score": 100,
             "weekly_soreness_score": 0,
             "exercises": [
-                {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
-                {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
+                {"name": "Clamshells", "intensity": "Light", "target_reps": 15, "target_sets": 3},
+                {"name": "Side-Lying Hip Abduction", "intensity": "Medium", "target_reps": 12, "target_sets": 3},
+                {"name": "Glute Bridge", "intensity": "Light", "target_reps": 15, "target_sets": 3},
+                {"name": "Single Leg Quarter Squat", "intensity": "Medium", "target_reps": 10, "target_sets": 3}
             ],
             "profile_snapshot": request.profile.dict()
         }
