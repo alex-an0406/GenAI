@@ -1,29 +1,48 @@
-import React, { useState } from 'react';
-import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform, Modal, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useAppStore, Plan } from '@/store/use-store';
+import { useAppStore } from '@/store/use-store';
 import { supabase } from '../lib/supabase';
-import { saveOnboardingData, createProfile } from '../lib/profile';
+import { generatePlan, UserProfile } from '../lib/api';
 
 type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
 
+const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
+
 export default function OnboardingScreen() {
-  const { profile, setProfile, addPlan } = useAppStore();
+  const { setProfile, setActivePlan } = useAppStore();
   const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
   const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [genderLayout, setGenderLayout] = useState({ top: 0, left: 0, width: 0 });
+  const genderRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
+  
   const [formData, setFormData] = useState({
-    name: profile?.name || '',
+    age: '',
+    weight_kg: '',
+    height_cm: '',
+    gender: 'Other',
+    surgery_history: 'None',
+    time_since_injury_days: '0',
     diagnosis: '',
     painDescription: '',
-    age: profile?.age || '',
-    weight: profile?.weight || '',
-    height: profile?.height || '',
     painLevel: 5,
   });
+
+  const openGenderPicker = () => {
+    genderRef.current?.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
+      setGenderLayout({
+        top: pageY + height,
+        left: pageX,
+        width: width,
+      });
+      setShowGenderPicker(true);
+    });
+  };
 
   const handleDiagnosisChoice = (choice: boolean) => {
     setHasDiagnosis(choice);
@@ -43,49 +62,28 @@ export default function OnboardingScreen() {
         return;
       }
 
-      // Make sure profile row exists
-      await createProfile(user.id, user.email ?? '');
-
-      // Save onboarding data to Supabase
-      await saveOnboardingData(user.id, {
-        name: formData.name,
-        age: formData.age,
-        weight: formData.weight,
-        height: formData.height,
-        hasDiagnosis: hasDiagnosis ?? false,
-        diagnosis: formData.diagnosis,
-        painDescription: formData.painDescription,
-        painLevel: formData.painLevel,
-      });
-
-      console.log('✅ Onboarding data saved to Supabase!');
-
-      // Also save to local store
-      if (!profile) {
-        setProfile({
-          name: formData.name,
-          age: formData.age,
-          weight: formData.weight,
-          height: formData.height,
-        });
-      }
-
-      // Create a new plan locally
-      const newPlan: Plan = {
-        id: Date.now().toString(),
-        title: hasDiagnosis ? formData.diagnosis : 'Pain Management',
-        startDate: new Date().toLocaleDateString(),
-        active: true,
-        type: hasDiagnosis ? 'diagnosis' : 'pain',
-        details: hasDiagnosis ? formData.diagnosis : formData.painDescription,
-        painLevel: formData.painLevel,
+      // 1. Prepare UserProfile object for API
+      const profileData: UserProfile = {
+        age: parseInt(formData.age) || 30,
+        weight_kg: parseFloat(formData.weight_kg) || 75,
+        height_cm: parseFloat(formData.height_cm) || 180,
+        gender: formData.gender,
+        surgery_history: formData.surgery_history,
+        time_since_injury_days: parseInt(formData.time_since_injury_days) || 0,
       };
 
-      addPlan(newPlan);
+      // 2. Generate Plan via Backend API (Source of Truth)
+      const response = await generatePlan(user.id, profileData);
+
+      // 3. Save to local store
+      setProfile(profileData);
+      setActivePlan(response.plan_data);
+
+      console.log('✅ Plan generated and saved locally!');
       router.replace('/(tabs)');
     } catch (error: any) {
-      console.error('Error saving onboarding:', error);
-      Alert.alert('Error', 'Failed to save your profile. Please try again.');
+      console.error('Error in onboarding:', error);
+      Alert.alert('Error', 'Failed to generate your plan. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -124,124 +122,192 @@ export default function OnboardingScreen() {
 
   // ============ FORM SCREEN ============
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <ThemedView style={styles.formContent}>
-        <TouchableOpacity onPress={() => setStep('ASK_DIAGNOSIS')} style={styles.backButton}>
-          <IconSymbol size={20} name="chevron.left" color="#007AFF" />
-          <ThemedText style={styles.backText}>Back</ThemedText>
-        </TouchableOpacity>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+        <ThemedView style={styles.formContent}>
+          <TouchableOpacity onPress={() => setStep('ASK_DIAGNOSIS')} style={styles.backButton}>
+            <IconSymbol size={20} name="chevron.left" color="#007AFF" />
+            <ThemedText style={styles.backText}>Back</ThemedText>
+          </TouchableOpacity>
 
-        <ThemedText type="title">New Recovery Plan</ThemedText>
+          <ThemedText type="title">New Recovery Plan</ThemedText>
 
-        {!profile && (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Full Name</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="John Doe"
-              placeholderTextColor="#888"
-              value={formData.name}
-              onChangeText={(t) => setFormData({ ...formData, name: t })}
-            />
-          </ThemedView>
-        )}
+          <View style={styles.row}>
+            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+              <ThemedText type="defaultSemiBold">Age</ThemedText>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="30"
+                placeholderTextColor="#888"
+                value={formData.age}
+                onChangeText={(t) => setFormData({ ...formData, age: t })}
+              />
+            </ThemedView>
+            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+              <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="75"
+                placeholderTextColor="#888"
+                value={formData.weight_kg}
+                onChangeText={(t) => setFormData({ ...formData, weight_kg: t })}
+              />
+            </ThemedView>
+          </View>
 
-        {hasDiagnosis ? (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">What is your diagnosis?</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Meniscus Tear, Tennis Elbow"
-              placeholderTextColor="#888"
-              value={formData.diagnosis}
-              onChangeText={(t) => setFormData({ ...formData, diagnosis: t })}
-            />
-          </ThemedView>
-        ) : (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Describe your pain</ThemedText>
-            <TextInput
-              style={[styles.input, { height: 100 }]}
-              placeholder="Where does it hurt? When did it start?"
-              placeholderTextColor="#888"
-              multiline
-              value={formData.painDescription}
-              onChangeText={(t) => setFormData({ ...formData, painDescription: t })}
-            />
-          </ThemedView>
-        )}
-
-        {!profile && (
-          <>
-            <View style={styles.row}>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Age</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="30"
-                  placeholderTextColor="#888"
-                  value={formData.age}
-                  onChangeText={(t) => setFormData({ ...formData, age: t })}
-                />
-              </ThemedView>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="75"
-                  placeholderTextColor="#888"
-                  value={formData.weight}
-                  onChangeText={(t) => setFormData({ ...formData, weight: t })}
-                />
-              </ThemedView>
-            </View>
-
-            <ThemedView style={styles.inputGroup}>
+          <View style={styles.row}>
+            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
               <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
               <TextInput
                 style={styles.input}
                 keyboardType="numeric"
                 placeholder="180"
                 placeholderTextColor="#888"
-                value={formData.height}
-                onChangeText={(t) => setFormData({ ...formData, height: t })}
+                value={formData.height_cm}
+                onChangeText={(t) => setFormData({ ...formData, height_cm: t })}
               />
             </ThemedView>
-          </>
-        )}
-
-        <ThemedView style={styles.inputGroup}>
-          <ThemedText type="defaultSemiBold">Current Pain Level: {formData.painLevel}/10</ThemedText>
-          <View style={styles.painSelector}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-              <TouchableOpacity
-                key={level}
-                style={[
-                  styles.painCircle,
-                  formData.painLevel === level && styles.selectedPainCircle,
-                  { backgroundColor: getPainColor(level, formData.painLevel === level) }
-                ]}
-                onPress={() => setFormData({ ...formData, painLevel: level })}
+            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+              <ThemedText type="defaultSemiBold">Gender</ThemedText>
+              <TouchableOpacity 
+                ref={genderRef}
+                style={styles.dropdownTrigger}
+                onPress={openGenderPicker}
               >
-                <ThemedText style={styles.painText}>{level}</ThemedText>
+                <ThemedText style={styles.dropdownText}>{formData.gender}</ThemedText>
+                <IconSymbol size={16} name="chevron.down" color="#888" />
               </TouchableOpacity>
-            ))}
+            </ThemedView>
           </View>
-        </ThemedView>
 
-        <TouchableOpacity
-          style={[styles.submitButton, loading && { opacity: 0.6 }]}
-          onPress={handleFinishOnboarding}
-          disabled={loading}
+          <ThemedView style={styles.inputGroup}>
+            <ThemedText type="defaultSemiBold">Surgery History</ThemedText>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. ACL reconstruction 2022, None"
+              placeholderTextColor="#888"
+              value={formData.surgery_history}
+              onChangeText={(t) => setFormData({ ...formData, surgery_history: t })}
+            />
+          </ThemedView>
+
+          <ThemedView style={styles.inputGroup}>
+            <ThemedText type="defaultSemiBold">Days since injury</ThemedText>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder="e.g. 14"
+              placeholderTextColor="#888"
+              value={formData.time_since_injury_days}
+              onChangeText={(t) => setFormData({ ...formData, time_since_injury_days: t })}
+            />
+          </ThemedView>
+
+          {hasDiagnosis ? (
+            <ThemedView style={styles.inputGroup}>
+              <ThemedText type="defaultSemiBold">What is your diagnosis?</ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Meniscus Tear, Tennis Elbow"
+                placeholderTextColor="#888"
+                value={formData.diagnosis}
+                onChangeText={(t) => setFormData({ ...formData, diagnosis: t })}
+              />
+            </ThemedView>
+          ) : (
+            <ThemedView style={styles.inputGroup}>
+              <ThemedText type="defaultSemiBold">Describe your pain</ThemedText>
+              <TextInput
+                style={[styles.input, { height: 80 }]}
+                placeholder="Where does it hurt?"
+                placeholderTextColor="#888"
+                multiline
+                value={formData.painDescription}
+                onChangeText={(t) => setFormData({ ...formData, painDescription: t })}
+              />
+            </ThemedView>
+          )}
+
+          <ThemedView style={styles.inputGroup}>
+            <ThemedText type="defaultSemiBold">Current Pain Level: {formData.painLevel}/10</ThemedText>
+            <View style={styles.painSelector}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.painCircle,
+                    formData.painLevel === level && styles.selectedPainCircle,
+                    { backgroundColor: getPainColor(level, formData.painLevel === level) }
+                  ]}
+                  onPress={() => setFormData({ ...formData, painLevel: level })}
+                >
+                  <ThemedText style={styles.painText}>{level}</ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ThemedView>
+
+          <TouchableOpacity
+            style={[styles.submitButton, loading && { opacity: 0.6 }]}
+            onPress={handleFinishOnboarding}
+            disabled={loading}
+          >
+            <ThemedText style={styles.submitButtonText}>
+              {loading ? 'Generating...' : 'Generate My Plan'}
+            </ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+      </ScrollView>
+
+      {/* Localized Gender Picker Modal */}
+      <Modal
+        visible={showGenderPicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowGenderPicker(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGenderPicker(false)}
         >
-          <ThemedText style={styles.submitButtonText}>
-            {loading ? 'Saving...' : 'Generate My Plan'}
-          </ThemedText>
+          <View style={[
+            styles.localizedPicker, 
+            { 
+              top: genderLayout.top, 
+              left: genderLayout.left, 
+              width: genderLayout.width 
+            }
+          ]}>
+            <FlatList
+              data={GENDER_OPTIONS}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.localizedOption}
+                  onPress={() => {
+                    setFormData({ ...formData, gender: item });
+                    setShowGenderPicker(false);
+                  }}
+                >
+                  <ThemedText style={[
+                    styles.optionText,
+                    formData.gender === item && { color: '#007AFF', fontWeight: 'bold' }
+                  ]}>
+                    {item}
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
         </TouchableOpacity>
-      </ThemedView>
-    </ScrollView>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -295,13 +361,13 @@ const styles = StyleSheet.create({
   formContent: {
     padding: 20,
     paddingTop: 60,
-    gap: 20,
+    gap: 15,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 10,
+    marginBottom: 5,
   },
   backText: {
     color: '#007AFF',
@@ -314,9 +380,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     color: '#fff',
     borderRadius: 12,
-    padding: 15,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#333',
+  },
+  dropdownTrigger: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 48,
+  },
+  dropdownText: {
+    color: '#fff',
   },
   row: {
     flexDirection: 'row',
@@ -325,13 +405,13 @@ const styles = StyleSheet.create({
   painSelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
     marginTop: 5,
   },
   painCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -344,18 +424,45 @@ const styles = StyleSheet.create({
   painText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 12,
   },
   submitButton: {
     backgroundColor: '#007AFF',
     padding: 20,
     borderRadius: 15,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
     marginBottom: 40,
   },
   submitButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  localizedPicker: {
+    position: 'absolute',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+    overflow: 'hidden',
+  },
+  localizedOption: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  optionText: {
+    fontSize: 14,
   },
 });

@@ -1,40 +1,22 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-export interface Plan {
-  id: string;
-  title: string;
-  startDate: string;
-  active: boolean;
-  type: 'diagnosis' | 'pain';
-  details: string;
-  painLevel: number;
-}
-
-export interface UserProfile {
-  name: string;
-  age: string;
-  weight: string;
-  height: string;
-}
+import { UserProfile, PlanData } from '../lib/api';
 
 interface AppState {
   profile: UserProfile | null;
-  plans: Plan[];
+  activePlan: PlanData | null;
   setProfile: (profile: UserProfile) => void;
-  addPlan: (plan: Plan) => void;
+  setActivePlan: (plan: PlanData) => void;
 }
 
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       profile: null,
-      plans: [],
+      activePlan: null,
       setProfile: (profile) => set({ profile }),
-      addPlan: (plan) => set((state) => ({ 
-        plans: [...state.plans, plan] 
-      })),
+      setActivePlan: (plan) => set({ activePlan: plan }),
     }),
     {
       name: 'myphyspal-storage',

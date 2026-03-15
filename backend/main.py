@@ -32,9 +32,26 @@ class UserProfile(BaseModel):
     surgery_history: str
     time_since_injury_days: int
 
+class Exercise(BaseModel):
+    name: str
+    intensity: str
+    target_reps: int
+    target_sets: int
+
+class PlanData(BaseModel):
+    momentum_score: int
+    weekly_soreness_score: int
+    exercises: List[Exercise]
+    profile_snapshot: UserProfile
+
 class PlanGenerateRequest(BaseModel):
     user_id: str
     profile: UserProfile
+
+class PlanResponse(BaseModel):
+    plan_id: str
+    status: str
+    plan_data: PlanData
 
 class Feedback(BaseModel):
     ease_score: int
@@ -46,48 +63,73 @@ class MetricsRequest(BaseModel):
     plan_id: str
     feedback: Feedback
 
+class MetricsResponse(BaseModel):
+    status: str
+    plans_updated: List[str]
+
 class EvaluateFormRequest(BaseModel):
     user_id: str
     exercise: str
     angles: List[float]
 
+class FormEvaluationResponse(BaseModel):
+    feedback_text: str
+    is_rep_valid: bool
+
 # --- Endpoints ---
 
-@app.post("/api/plans/generate")
+@app.post("/api/plans/generate", response_model=PlanResponse)
 async def generate_plan(request: PlanGenerateRequest):
     """
-    Generates a new exercise plan based on user profile and saves it to Supabase.
+    Ensures user profile exists, then generates and saves a new exercise plan.
     """
-    # Construct the initial plan_data
-    plan_data = {
-        "momentum_score": 100,
-        "weekly_soreness_score": 0,
-        "exercises": [
-            {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
-            {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
-        ],
-        "profile_snapshot": request.profile.dict()
-    }
-
-    # Perform the insert into the 'plans' table
     try:
+        # 1. Ensure the user profile exists in the 'profiles' table
+        # We 'upsert' to handle both new users and profile updates
+        supabase.table("profiles").upsert({
+            "id": request.user_id,
+            "age": request.profile.age,
+            "weight_kg": request.profile.weight_kg,
+            "height_cm": request.profile.height_cm,
+            "gender": request.profile.gender,  # Added!
+            "surgery_history": request.profile.surgery_history,  # Added!
+            "time_since_injury_days": request.profile.time_since_injury_days,  # Added!
+            "onboarding_completed": True,
+            "updated_at": "now()"
+        }).execute()
+
+        # 2. Construct the initial plan_data
+        plan_data = {
+            "momentum_score": 100,
+            "weekly_soreness_score": 0,
+            "exercises": [
+                {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
+                {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
+            ],
+            "profile_snapshot": request.profile.dict()
+        }
+
+        # 3. Insert into the 'plans' table
         response = supabase.table("plans").insert({
             "user_id": request.user_id,
             "status": "active",
             "plan_data": plan_data
         }).execute()
 
-        # Extract the inserted row
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Failed to create plan record.")
+
         new_plan = response.data[0]
         return {
-            "plan_id": new_plan["id"],
+            "plan_id": str(new_plan["id"]),
             "status": new_plan["status"],
             "plan_data": new_plan["plan_data"]
         }
     except Exception as e:
+        print(f"Error in generate_plan: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/plans/{plan_id}")
+@app.get("/api/plans/{plan_id}", response_model=PlanData)
 async def get_plan(
     plan_id: str = Path(..., description="The ID of the plan to fetch"),
     user_id: str = Query(..., description="The ID of the user requesting the plan")
@@ -113,7 +155,7 @@ async def get_plan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/metrics")
+@app.post("/api/metrics", response_model=MetricsResponse)
 async def submit_metrics(request: MetricsRequest):
     """
     Receives workout feedback, adjusts plan_data dynamically, and updates Supabase.
@@ -155,7 +197,7 @@ async def submit_metrics(request: MetricsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/evaluate-form")
+@app.post("/api/evaluate-form", response_model=FormEvaluationResponse)
 async def evaluate_form(request: EvaluateFormRequest):
     """
     Purely computational endpoint for live form feedback (no DB calls).
