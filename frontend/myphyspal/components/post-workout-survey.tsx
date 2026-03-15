@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Modal, View, TextInput } from 'react-native';
+import { StyleSheet, TouchableOpacity, Modal, View, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
@@ -16,7 +16,10 @@ export const PostWorkoutSurvey = ({ visible, onClose, onSubmit }: SurveyProps) =
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView 
+        style={styles.modalOverlay} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <ThemedView style={styles.modalContent}>
           <ThemedText type="subtitle">Workout Complete!</ThemedText>
           
@@ -63,7 +66,7 @@ export const PostWorkoutSurvey = ({ visible, onClose, onSubmit }: SurveyProps) =
             <ThemedText style={styles.submitText}>Submit & Sync to Backend</ThemedText>
           </TouchableOpacity>
         </ThemedView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
