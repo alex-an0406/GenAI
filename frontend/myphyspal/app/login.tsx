@@ -6,6 +6,7 @@ import {
     StyleSheet,
     Alert,
     ActivityIndicator,
+    Image,
 } from 'react-native';
 import { signInWithGoogle } from '../lib/auth';
 import { hasCompletedOnboarding } from '../lib/profile';
@@ -55,8 +56,11 @@ export default function LoginScreen() {
         <View style={styles.container}>
             {/* App Branding */}
             <View style={styles.brandContainer}>
-                <Text style={styles.emoji}>🏥</Text>
-                <Text style={styles.title}>MyPhysPal</Text>
+                <Image 
+                    source={require('../assets/images/fizzio-logo.png')} 
+                    style={styles.logo}
+                    resizeMode="contain"
+                />
                 <Text style={styles.subtitle}>
                     Your personalized physiotherapy companion
                 </Text>
@@ -100,13 +104,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 12,
     },
-    emoji: {
-        fontSize: 80,
-    },
-    title: {
-        fontSize: 36,
-        fontWeight: 'bold',
-        color: '#fff',
+    logo: {
+        width: 200,
+        height: 200,
+        marginBottom: 20,
     },
     subtitle: {
         fontSize: 16,
