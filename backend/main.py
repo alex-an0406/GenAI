@@ -105,6 +105,7 @@ async def generate_plan(request: PlanGenerateRequest):
             "exercises": [
                 {"name": "Knee Extension", "intensity": "Light", "target_reps": 10, "target_sets": 3},
                 {"name": "Straight Leg Raise", "intensity": "Light", "target_reps": 12, "target_sets": 2}
+                {"name": "One-leg deadlifts", "intensity": "Light", "target_reps": 12, "target_sets": 2}
             ],
             "profile_snapshot": request.profile.dict()
         }
