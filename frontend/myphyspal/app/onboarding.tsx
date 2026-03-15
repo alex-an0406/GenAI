@@ -4,24 +4,27 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useAppStore, Plan } from '@/store/use-store';
+import { useAppStore } from '@/store/use-store';
 import { supabase } from '../lib/supabase';
-import { saveOnboardingData, createProfile } from '../lib/profile';
+import { generatePlan, UserProfile } from '../lib/api';
 
 type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
 
 export default function OnboardingScreen() {
-  const { profile, setProfile, addPlan } = useAppStore();
+  const { setProfile, setActivePlan } = useAppStore();
   const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
   const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  
   const [formData, setFormData] = useState({
-    name: profile?.name || '',
+    age: '',
+    weight_kg: '',
+    height_cm: '',
+    gender: 'Other',
+    surgery_history: 'None',
+    time_since_injury_days: '0',
     diagnosis: '',
     painDescription: '',
-    age: profile?.age || '',
-    weight: profile?.weight || '',
-    height: profile?.height || '',
     painLevel: 5,
   });
 
@@ -43,49 +46,28 @@ export default function OnboardingScreen() {
         return;
       }
 
-      // Make sure profile row exists
-      await createProfile(user.id, user.email ?? '');
-
-      // Save onboarding data to Supabase
-      await saveOnboardingData(user.id, {
-        name: formData.name,
-        age: formData.age,
-        weight: formData.weight,
-        height: formData.height,
-        hasDiagnosis: hasDiagnosis ?? false,
-        diagnosis: formData.diagnosis,
-        painDescription: formData.painDescription,
-        painLevel: formData.painLevel,
-      });
-
-      console.log('✅ Onboarding data saved to Supabase!');
-
-      // Also save to local store
-      if (!profile) {
-        setProfile({
-          name: formData.name,
-          age: formData.age,
-          weight: formData.weight,
-          height: formData.height,
-        });
-      }
-
-      // Create a new plan locally
-      const newPlan: Plan = {
-        id: Date.now().toString(),
-        title: hasDiagnosis ? formData.diagnosis : 'Pain Management',
-        startDate: new Date().toLocaleDateString(),
-        active: true,
-        type: hasDiagnosis ? 'diagnosis' : 'pain',
-        details: hasDiagnosis ? formData.diagnosis : formData.painDescription,
-        painLevel: formData.painLevel,
+      // 1. Prepare UserProfile object for API
+      const profileData: UserProfile = {
+        age: parseInt(formData.age) || 30,
+        weight_kg: parseFloat(formData.weight_kg) || 75,
+        height_cm: parseFloat(formData.height_cm) || 180,
+        gender: formData.gender,
+        surgery_history: formData.surgery_history,
+        time_since_injury_days: parseInt(formData.time_since_injury_days) || 0,
       };
 
-      addPlan(newPlan);
+      // 2. Generate Plan via Backend API (Source of Truth)
+      const response = await generatePlan(user.id, profileData);
+
+      // 3. Save to local store
+      setProfile(profileData);
+      setActivePlan(response.plan_data);
+
+      console.log('✅ Plan generated and saved locally!');
       router.replace('/(tabs)');
     } catch (error: any) {
-      console.error('Error saving onboarding:', error);
-      Alert.alert('Error', 'Failed to save your profile. Please try again.');
+      console.error('Error in onboarding:', error);
+      Alert.alert('Error', 'Failed to generate your plan. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -133,18 +115,77 @@ export default function OnboardingScreen() {
 
         <ThemedText type="title">New Recovery Plan</ThemedText>
 
-        {!profile && (
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Full Name</ThemedText>
+        <View style={styles.row}>
+          <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+            <ThemedText type="defaultSemiBold">Age</ThemedText>
             <TextInput
               style={styles.input}
-              placeholder="John Doe"
+              keyboardType="numeric"
+              placeholder="30"
               placeholderTextColor="#888"
-              value={formData.name}
-              onChangeText={(t) => setFormData({ ...formData, name: t })}
+              value={formData.age}
+              onChangeText={(t) => setFormData({ ...formData, age: t })}
             />
           </ThemedView>
-        )}
+          <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+            <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder="75"
+              placeholderTextColor="#888"
+              value={formData.weight_kg}
+              onChangeText={(t) => setFormData({ ...formData, weight_kg: t })}
+            />
+          </ThemedView>
+        </View>
+
+        <View style={styles.row}>
+          <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+            <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              placeholder="180"
+              placeholderTextColor="#888"
+              value={formData.height_cm}
+              onChangeText={(t) => setFormData({ ...formData, height_cm: t })}
+            />
+          </ThemedView>
+          <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+            <ThemedText type="defaultSemiBold">Gender</ThemedText>
+            <TextInput
+              style={styles.input}
+              placeholder="Male/Female/Other"
+              placeholderTextColor="#888"
+              value={formData.gender}
+              onChangeText={(t) => setFormData({ ...formData, gender: t })}
+            />
+          </ThemedView>
+        </View>
+
+        <ThemedView style={styles.inputGroup}>
+          <ThemedText type="defaultSemiBold">Surgery History</ThemedText>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. ACL reconstruction 2022, None"
+            placeholderTextColor="#888"
+            value={formData.surgery_history}
+            onChangeText={(t) => setFormData({ ...formData, surgery_history: t })}
+          />
+        </ThemedView>
+
+        <ThemedView style={styles.inputGroup}>
+          <ThemedText type="defaultSemiBold">Days since injury</ThemedText>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            placeholder="e.g. 14"
+            placeholderTextColor="#888"
+            value={formData.time_since_injury_days}
+            onChangeText={(t) => setFormData({ ...formData, time_since_injury_days: t })}
+          />
+        </ThemedView>
 
         {hasDiagnosis ? (
           <ThemedView style={styles.inputGroup}>
@@ -161,55 +202,14 @@ export default function OnboardingScreen() {
           <ThemedView style={styles.inputGroup}>
             <ThemedText type="defaultSemiBold">Describe your pain</ThemedText>
             <TextInput
-              style={[styles.input, { height: 100 }]}
-              placeholder="Where does it hurt? When did it start?"
+              style={[styles.input, { height: 80 }]}
+              placeholder="Where does it hurt?"
               placeholderTextColor="#888"
               multiline
               value={formData.painDescription}
               onChangeText={(t) => setFormData({ ...formData, painDescription: t })}
             />
           </ThemedView>
-        )}
-
-        {!profile && (
-          <>
-            <View style={styles.row}>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Age</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="30"
-                  placeholderTextColor="#888"
-                  value={formData.age}
-                  onChangeText={(t) => setFormData({ ...formData, age: t })}
-                />
-              </ThemedView>
-              <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-                <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="75"
-                  placeholderTextColor="#888"
-                  value={formData.weight}
-                  onChangeText={(t) => setFormData({ ...formData, weight: t })}
-                />
-              </ThemedView>
-            </View>
-
-            <ThemedView style={styles.inputGroup}>
-              <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="180"
-                placeholderTextColor="#888"
-                value={formData.height}
-                onChangeText={(t) => setFormData({ ...formData, height: t })}
-              />
-            </ThemedView>
-          </>
         )}
 
         <ThemedView style={styles.inputGroup}>
@@ -237,7 +237,7 @@ export default function OnboardingScreen() {
           disabled={loading}
         >
           <ThemedText style={styles.submitButtonText}>
-            {loading ? 'Saving...' : 'Generate My Plan'}
+            {loading ? 'Generating...' : 'Generate My Plan'}
           </ThemedText>
         </TouchableOpacity>
       </ThemedView>
@@ -295,13 +295,13 @@ const styles = StyleSheet.create({
   formContent: {
     padding: 20,
     paddingTop: 60,
-    gap: 20,
+    gap: 15,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 10,
+    marginBottom: 5,
   },
   backText: {
     color: '#007AFF',
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     color: '#fff',
     borderRadius: 12,
-    padding: 15,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#333',
   },
@@ -325,13 +325,13 @@ const styles = StyleSheet.create({
   painSelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
     marginTop: 5,
   },
   painCircle: {
-    width: 35,
-    height: 35,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -344,13 +344,14 @@ const styles = StyleSheet.create({
   painText: {
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 12,
   },
   submitButton: {
     backgroundColor: '#007AFF',
     padding: 20,
     borderRadius: 15,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
     marginBottom: 40,
   },
   submitButtonText: {

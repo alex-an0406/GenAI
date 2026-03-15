@@ -32,9 +32,26 @@ class UserProfile(BaseModel):
     surgery_history: str
     time_since_injury_days: int
 
+class Exercise(BaseModel):
+    name: str
+    intensity: str
+    target_reps: int
+    target_sets: int
+
+class PlanData(BaseModel):
+    momentum_score: int
+    weekly_soreness_score: int
+    exercises: List[Exercise]
+    profile_snapshot: UserProfile
+
 class PlanGenerateRequest(BaseModel):
     user_id: str
     profile: UserProfile
+
+class PlanResponse(BaseModel):
+    plan_id: str
+    status: str
+    plan_data: PlanData
 
 class Feedback(BaseModel):
     ease_score: int
@@ -46,14 +63,22 @@ class MetricsRequest(BaseModel):
     plan_id: str
     feedback: Feedback
 
+class MetricsResponse(BaseModel):
+    status: str
+    plans_updated: List[str]
+
 class EvaluateFormRequest(BaseModel):
     user_id: str
     exercise: str
     angles: List[float]
 
+class FormEvaluationResponse(BaseModel):
+    feedback_text: str
+    is_rep_valid: bool
+
 # --- Endpoints ---
 
-@app.post("/api/plans/generate")
+@app.post("/api/plans/generate", response_model=PlanResponse)
 async def generate_plan(request: PlanGenerateRequest):
     """
     Generates a new exercise plan based on user profile and saves it to Supabase.
@@ -87,7 +112,7 @@ async def generate_plan(request: PlanGenerateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/plans/{plan_id}")
+@app.get("/api/plans/{plan_id}", response_model=PlanData)
 async def get_plan(
     plan_id: str = Path(..., description="The ID of the plan to fetch"),
     user_id: str = Query(..., description="The ID of the user requesting the plan")
@@ -113,7 +138,7 @@ async def get_plan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/metrics")
+@app.post("/api/metrics", response_model=MetricsResponse)
 async def submit_metrics(request: MetricsRequest):
     """
     Receives workout feedback, adjusts plan_data dynamically, and updates Supabase.
@@ -155,7 +180,7 @@ async def submit_metrics(request: MetricsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/evaluate-form")
+@app.post("/api/evaluate-form", response_model=FormEvaluationResponse)
 async def evaluate_form(request: EvaluateFormRequest):
     """
     Purely computational endpoint for live form feedback (no DB calls).
