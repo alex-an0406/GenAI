@@ -1,40 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, FlatList, TouchableOpacity, View, Modal, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-
-const MOCK_TODAY = [
-  { 
-    id: '1', 
-    name: 'Knee Extensions', 
-    sets: 3, 
-    reps: 15, 
-    completed: false,
-    description: 'Sit on a chair with your back straight. Slowly straighten one knee, lifting your foot until your leg is straight. Hold for 2 seconds, then slowly lower. Focus on engaging your quadriceps.'
-  },
-  { 
-    id: '2', 
-    name: 'Hamstring Curls', 
-    sets: 3, 
-    reps: 12, 
-    completed: false,
-    description: 'Stand tall while holding onto a sturdy chair or wall for balance. Bend one knee, bringing your heel toward your glutes. Keep your knees aligned. Slowly lower back down.'
-  },
-  { 
-    id: '3', 
-    name: 'Wall Sits', 
-    sets: 2, 
-    holdTime: '30s', 
-    completed: false,
-    description: 'Lean against a flat wall with your feet about shoulder-width apart. Slide down until your knees are at a 90-degree angle, as if sitting in an invisible chair. Hold this position.'
-  },
-];
+import { useAppStore } from '@/store/use-store';
+import { Exercise } from '@/lib/api';
 
 export default function TodayScreen() {
-  const [exercises, setExercises] = useState(MOCK_TODAY);
-  const [selectedExercise, setSelectedExercise] = useState<any>(null);
+  const { activePlan } = useAppStore();
+  const [exercises, setExercises] = useState<(Exercise & { completed: boolean, id: string })[]>([]);
+  const [selectedExercise, setSelectedExercise] = useState<(Exercise & { completed: boolean, id: string }) | null>(null);
+
+  useEffect(() => {
+    if (activePlan) {
+      setExercises(activePlan.exercises.map((ex, index) => ({
+        ...ex,
+        id: `${ex.name}-${index}`,
+        completed: false, 
+      })));
+    }
+  }, [activePlan]);
 
   const toggleComplete = (id: string) => {
     setExercises(exercises.map(ex => 
@@ -43,11 +29,10 @@ export default function TodayScreen() {
   };
 
   const startLiveAssistant = (exerciseName: string) => {
-    // Navigate to the new Coach screen
     router.push('/coach');
   };
 
-  const renderExercise = ({ item }: { item: any }) => (
+  const renderExercise = ({ item }: { item: Exercise & { completed: boolean, id: string } }) => (
     <ThemedView style={styles.card}>
       <TouchableOpacity 
         style={styles.cardInfo} 
@@ -57,7 +42,7 @@ export default function TodayScreen() {
           <ThemedText type="subtitle" style={item.completed && styles.completedText}>{item.name}</ThemedText>
           <IconSymbol size={16} name="info.circle" color="#888" style={{marginLeft: 5}} />
         </View>
-        <ThemedText>{item.reps ? `${item.sets} x ${item.reps}` : `${item.sets} x ${item.holdTime}`}</ThemedText>
+        <ThemedText>{item.target_sets} x {item.target_reps} • {item.intensity}</ThemedText>
       </TouchableOpacity>
       
       <View style={styles.actions}>
@@ -74,11 +59,27 @@ export default function TodayScreen() {
     </ThemedView>
   );
 
+  if (!activePlan) {
+    return (
+      <ThemedView style={[styles.container, styles.center]}>
+        <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 20 }}>
+          No exercises for today.
+        </ThemedText>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => router.push('/onboarding')}
+        >
+          <ThemedText style={styles.actionButtonText}>Setup Recovery Plan</ThemedText>
+        </TouchableOpacity>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <ThemedView style={styles.header}>
         <ThemedText type="title">Today's Exercises</ThemedText>
-        <ThemedText>Recovery Plan: Knee Pain (Day 12)</ThemedText>
+        <ThemedText>Plan: {activePlan.exercises[0]?.name} Recovery</ThemedText>
       </ThemedView>
 
       <FlatList
@@ -88,7 +89,7 @@ export default function TodayScreen() {
         contentContainerStyle={styles.list}
       />
 
-      {exercises.every(e => e.completed) && (
+      {exercises.length > 0 && exercises.every(e => e.completed) && (
         <ThemedView style={styles.congrats}>
           <ThemedText type="defaultSemiBold">🎉 Today's Routine Complete!</ThemedText>
         </ThemedView>
@@ -112,18 +113,21 @@ export default function TodayScreen() {
             
             <ScrollView style={styles.modalScroll}>
               <ThemedView style={styles.descriptionCard}>
-                <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>Instructions</ThemedText>
-                <ThemedText style={styles.descriptionText}>{selectedExercise?.description}</ThemedText>
+                <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>Details</ThemedText>
+                <ThemedText style={styles.descriptionText}>
+                  Intensity: {selectedExercise?.intensity}{"\n"}
+                  Focus on proper form and control throughout the movement.
+                </ThemedText>
               </ThemedView>
 
               <ThemedView style={styles.statsRow}>
                 <View style={styles.statBox}>
-                  <ThemedText style={styles.statValue}>{selectedExercise?.sets}</ThemedText>
+                  <ThemedText style={styles.statValue}>{selectedExercise?.target_sets}</ThemedText>
                   <ThemedText style={styles.statLabel}>Sets</ThemedText>
                 </View>
                 <View style={styles.statBox}>
-                  <ThemedText style={styles.statValue}>{selectedExercise?.reps || selectedExercise?.holdTime}</ThemedText>
-                  <ThemedText style={styles.statLabel}>{selectedExercise?.reps ? 'Reps' : 'Hold'}</ThemedText>
+                  <ThemedText style={styles.statValue}>{selectedExercise?.target_reps}</ThemedText>
+                  <ThemedText style={styles.statLabel}>Reps</ThemedText>
                 </View>
               </ThemedView>
 
@@ -131,7 +135,7 @@ export default function TodayScreen() {
                 style={styles.modalCoachButton} 
                 onPress={() => {
                   setSelectedExercise(null);
-                  startLiveAssistant(selectedExercise?.name);
+                  startLiveAssistant(selectedExercise?.name || "");
                 }}
               >
                 <ThemedText style={styles.modalCoachButtonText}>Start with AI Coach</ThemedText>
@@ -149,12 +153,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 60,
     paddingHorizontal: 20,
+    backgroundColor: '#121212',
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     marginBottom: 30,
   },
   list: {
     gap: 15,
+    paddingBottom: 40,
   },
   card: {
     flexDirection: 'row',
@@ -251,6 +261,7 @@ const styles = StyleSheet.create({
   descriptionText: {
     lineHeight: 22,
     opacity: 0.9,
+    color: '#fff',
   },
   statsRow: {
     flexDirection: 'row',
@@ -287,4 +298,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 18,
   },
+  actionButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 15,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  }
 });

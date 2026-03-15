@@ -7,7 +7,10 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAppStore } from '@/store/use-store';
 
 export default function PlannerScreen() {
-  const { plans } = useAppStore();
+  const { plans, activePlan } = useAppStore();
+
+  // Handle case where we have an active plan but plans array is empty (old state)
+  const displayPlans = (plans.length === 0 && activePlan) ? [activePlan] : plans;
 
   const addNewPlan = () => {
     router.push('/onboarding');
@@ -16,8 +19,8 @@ export default function PlannerScreen() {
   const renderPlan = ({ item }: { item: any }) => (
     <ThemedView style={styles.planCard}>
       <View style={styles.planInfo}>
-        <ThemedText type="subtitle">{item.title}</ThemedText>
-        <ThemedText style={styles.dateText}>Started: {item.startDate}</ThemedText>
+        <ThemedText type="subtitle">{item.title || "Recovery Plan"}</ThemedText>
+        <ThemedText style={styles.dateText}>Started: {item.startDate || "Today"}</ThemedText>
       </View>
       <View style={styles.statusBadge}>
         <ThemedText style={styles.statusText}>{item.active ? 'Active' : 'Completed'}</ThemedText>
@@ -34,8 +37,8 @@ export default function PlannerScreen() {
       </ThemedView>
 
       <FlatList
-        data={plans}
-        keyExtractor={(item) => item.id}
+        data={displayPlans}
+        keyExtractor={(item) => item.id || Math.random().toString()}
         renderItem={renderPlan}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
@@ -44,6 +47,7 @@ export default function PlannerScreen() {
           </View>
         }
       />
+...
 
       <TouchableOpacity style={styles.addButton} onPress={addNewPlan}>
         <IconSymbol size={24} name="plus" color="#fff" />

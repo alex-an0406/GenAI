@@ -1,52 +1,65 @@
-import React, { useState } from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, View } from 'react-native';
+import React from 'react';
+import { StyleSheet, FlatList, TouchableOpacity, View, ScrollView } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+import { useAppStore } from '@/store/use-store';
+import { router } from 'expo-router';
+import { Exercise } from '@/lib/api';
 
 export default function CalendarScreen() {
-  const [completedDays, setCompletedDays] = useState(['Mon', 'Tue']); // Mock tracking
+  const { activePlan } = useAppStore();
 
-  const renderDay = ({ item }: { item: string }) => {
-    const isCompleted = completedDays.includes(item);
+  const renderExercise = ({ item }: { item: Exercise }) => {
     return (
       <View style={styles.dayRow}>
-        <View style={[styles.circle, isCompleted && styles.completedCircle]}>
-          <ThemedText style={isCompleted ? styles.whiteText : {}}>{item[0]}</ThemedText>
+        <View style={styles.circle}>
+          <ThemedText style={styles.whiteText}>{item.name[0]}</ThemedText>
         </View>
         <View style={styles.info}>
-          <ThemedText type="subtitle">{item}day's Routine</ThemedText>
+          <ThemedText type="subtitle">{item.name}</ThemedText>
           <ThemedText style={{ opacity: 0.6 }}>
-            {isCompleted ? '✓ 3/3 Exercises Completed' : '0/3 Exercises Completed'}
+            {item.target_sets} sets x {item.target_reps} reps • {item.intensity}
           </ThemedText>
         </View>
-        <TouchableOpacity style={styles.viewButton}>
-           <ThemedText style={styles.viewButtonText}>View</ThemedText>
+        <TouchableOpacity 
+          style={styles.viewButton}
+          onPress={() => router.push('/coach')}
+        >
+           <ThemedText style={styles.viewButtonText}>Start</ThemedText>
         </TouchableOpacity>
       </View>
     );
   };
 
+  if (!activePlan) {
+    return (
+      <ThemedView style={[styles.container, styles.center]}>
+        <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 20 }}>
+          No active plan found.
+        </ThemedText>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => router.push('/onboarding')}
+        >
+          <ThemedText style={styles.actionButtonText}>Generate a Plan</ThemedText>
+        </TouchableOpacity>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <ThemedView style={styles.header}>
-        <ThemedText type="title">Weekly Progress</ThemedText>
-        <ThemedText>Recovery Streak: 2 Days 🔥</ThemedText>
+        <ThemedText type="title">Current Plan</ThemedText>
+        <ThemedText>Momentum: {activePlan.momentum_score} 🔥</ThemedText>
       </ThemedView>
 
       <FlatList
-        data={DAYS}
-        keyExtractor={(item) => item}
-        renderItem={renderDay}
+        data={activePlan.exercises}
+        keyExtractor={(item, index) => `${item.name}-${index}`}
+        renderItem={renderExercise}
         contentContainerStyle={styles.list}
       />
-
-      {/* ---------------------------------------------------------
-          BACKEND INTEGRATION POINT:
-          GET /calendar-summary
-          Returns the history of completed exercises for the UI.
-          --------------------------------------------------------- */}
     </ThemedView>
   );
 }
@@ -56,12 +69,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 60,
     paddingHorizontal: 20,
+    backgroundColor: '#121212',
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     marginBottom: 30,
   },
   list: {
     gap: 15,
+    paddingBottom: 40,
   },
   dayRow: {
     flexDirection: 'row',
@@ -82,10 +101,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 15,
   },
-  completedCircle: {
-    backgroundColor: '#34C759',
-    borderColor: '#34C759',
-  },
   whiteText: {
     color: '#fff',
     fontWeight: 'bold',
@@ -95,8 +110,22 @@ const styles = StyleSheet.create({
   },
   viewButton: {
     padding: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
   },
   viewButtonText: {
-    color: '#007AFF',
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  actionButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 15,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   }
 });

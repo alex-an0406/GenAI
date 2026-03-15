@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform, Modal, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -13,11 +13,12 @@ type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
 const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
 
 export default function OnboardingScreen() {
-  const { setProfile, setActivePlan } = useAppStore();
+  const { profile, setProfile, setActivePlan } = useAppStore();
   const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
   const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [showProfileFields, setShowProfileFields] = useState(true);
   const [genderLayout, setGenderLayout] = useState({ top: 0, left: 0, width: 0 });
   const genderRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   
@@ -32,6 +33,22 @@ export default function OnboardingScreen() {
     painDescription: '',
     painLevel: 5,
   });
+
+  // Pre-fill if profile exists
+  useEffect(() => {
+    if (profile) {
+      setFormData(prev => ({
+        ...prev,
+        age: profile.age.toString(),
+        weight_kg: profile.weight_kg.toString(),
+        height_cm: profile.height_cm.toString(),
+        gender: profile.gender,
+        surgery_history: profile.surgery_history || 'None',
+        time_since_injury_days: profile.time_since_injury_days.toString(),
+      }));
+      setShowProfileFields(false); // Hide profile fields by default if we already have them
+    }
+  }, [profile]);
 
   const openGenderPicker = () => {
     genderRef.current?.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
@@ -135,78 +152,93 @@ export default function OnboardingScreen() {
 
           <ThemedText type="title">New Recovery Plan</ThemedText>
 
-          <View style={styles.row}>
-            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-              <ThemedText type="defaultSemiBold">Age</ThemedText>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="30"
-                placeholderTextColor="#888"
-                value={formData.age}
-                onChangeText={(t) => setFormData({ ...formData, age: t })}
-              />
-            </ThemedView>
-            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-              <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="75"
-                placeholderTextColor="#888"
-                value={formData.weight_kg}
-                onChangeText={(t) => setFormData({ ...formData, weight_kg: t })}
-              />
-            </ThemedView>
-          </View>
+          {profile && !showProfileFields ? (
+            <View style={styles.profileSummary}>
+              <View style={styles.summaryRow}>
+                <ThemedText style={styles.summaryText}>
+                  {formData.gender}, {formData.age} yrs, {formData.weight_kg}kg, {formData.height_cm}cm
+                </ThemedText>
+                <TouchableOpacity onPress={() => setShowProfileFields(true)}>
+                  <ThemedText style={styles.editText}>Edit</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.row}>
+                <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+                  <ThemedText type="defaultSemiBold">Age</ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="numeric"
+                    placeholder="30"
+                    placeholderTextColor="#888"
+                    value={formData.age}
+                    onChangeText={(t) => setFormData({ ...formData, age: t })}
+                  />
+                </ThemedView>
+                <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+                  <ThemedText type="defaultSemiBold">Weight (kg)</ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="numeric"
+                    placeholder="75"
+                    placeholderTextColor="#888"
+                    value={formData.weight_kg}
+                    onChangeText={(t) => setFormData({ ...formData, weight_kg: t })}
+                  />
+                </ThemedView>
+              </View>
 
-          <View style={styles.row}>
-            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-              <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
-              <TextInput
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="180"
-                placeholderTextColor="#888"
-                value={formData.height_cm}
-                onChangeText={(t) => setFormData({ ...formData, height_cm: t })}
-              />
-            </ThemedView>
-            <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
-              <ThemedText type="defaultSemiBold">Gender</ThemedText>
-              <TouchableOpacity 
-                ref={genderRef}
-                style={styles.dropdownTrigger}
-                onPress={openGenderPicker}
-              >
-                <ThemedText style={styles.dropdownText}>{formData.gender}</ThemedText>
-                <IconSymbol size={16} name="chevron.down" color="#888" />
-              </TouchableOpacity>
-            </ThemedView>
-          </View>
+              <View style={styles.row}>
+                <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+                  <ThemedText type="defaultSemiBold">Height (cm)</ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="numeric"
+                    placeholder="180"
+                    placeholderTextColor="#888"
+                    value={formData.height_cm}
+                    onChangeText={(t) => setFormData({ ...formData, height_cm: t })}
+                  />
+                </ThemedView>
+                <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
+                  <ThemedText type="defaultSemiBold">Gender</ThemedText>
+                  <TouchableOpacity 
+                    ref={genderRef}
+                    style={styles.dropdownTrigger}
+                    onPress={openGenderPicker}
+                  >
+                    <ThemedText style={styles.dropdownText}>{formData.gender}</ThemedText>
+                    <IconSymbol size={16} name="chevron.down" color="#888" />
+                  </TouchableOpacity>
+                </ThemedView>
+              </View>
 
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Surgery History</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. ACL reconstruction 2022, None"
-              placeholderTextColor="#888"
-              value={formData.surgery_history}
-              onChangeText={(t) => setFormData({ ...formData, surgery_history: t })}
-            />
-          </ThemedView>
+              <ThemedView style={styles.inputGroup}>
+                <ThemedText type="defaultSemiBold">Surgery History</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. ACL reconstruction 2022, None"
+                  placeholderTextColor="#888"
+                  value={formData.surgery_history}
+                  onChangeText={(t) => setFormData({ ...formData, surgery_history: t })}
+                />
+              </ThemedView>
 
-          <ThemedView style={styles.inputGroup}>
-            <ThemedText type="defaultSemiBold">Days since injury</ThemedText>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="e.g. 14"
-              placeholderTextColor="#888"
-              value={formData.time_since_injury_days}
-              onChangeText={(t) => setFormData({ ...formData, time_since_injury_days: t })}
-            />
-          </ThemedView>
+              <ThemedView style={styles.inputGroup}>
+                <ThemedText type="defaultSemiBold">Days since injury</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  keyboardType="numeric"
+                  placeholder="e.g. 14"
+                  placeholderTextColor="#888"
+                  value={formData.time_since_injury_days}
+                  onChangeText={(t) => setFormData({ ...formData, time_since_injury_days: t })}
+                />
+              </ThemedView>
+            </>
+          )}
 
           {hasDiagnosis ? (
             <ThemedView style={styles.inputGroup}>
@@ -465,4 +497,26 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 14,
   },
+  profileSummary: {
+    backgroundColor: '#1E1E1E',
+    padding: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryText: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  editText: {
+    color: '#007AFF',
+    fontWeight: 'bold',
+  }
 });
