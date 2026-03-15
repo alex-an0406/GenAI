@@ -1,16 +1,18 @@
-from fastapi import FastAPI, Query, Path, HTTPException
+from fastapi import FastAPI, Query, Path, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
+import json
 
 # Our custom packages
 from supabase_client import supabase  # Import our initialized Supabase client
+from pose_service import process_base64_frame # Real-time AI pose logic
 
 # Initialize the FastAPI application
 app = FastAPI(
     title="Fizio MVP Backend",
     description="Backend for Fizio, an AI-powered physiotherapy app.",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 # Configure CORS to allow all origins, methods, and headers
@@ -197,22 +199,40 @@ async def submit_metrics(request: MetricsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/evaluate-form", response_model=FormEvaluationResponse)
-async def evaluate_form(request: EvaluateFormRequest):
+@app.websocket("/ws/evaluate-form")
+async def websocket_endpoint(websocket: WebSocket):
     """
-    Purely computational endpoint for live form feedback (no DB calls).
+    WebSocket for real-time form evaluation.
+    Receives JSON: {"user_id": "...", "exercise": "...", "frame_data": "base64..."}
     """
-    # Dummy logic check for Knee extension
-    if request.exercise.lower() == "knee extension" and request.angles:
-        first_angle = request.angles[0]
-        if first_angle < 90:
-            return {
-                "feedback_text": "Extend your knee a bit further",
-                "is_rep_valid": False
-            }
-
-    # Default success response
-    return {
-        "feedback_text": "Good form",
-        "is_rep_valid": True
-    }
+    await websocket.accept()
+    print("🚀 Real-time session started via WebSocket")
+    try:
+        while True:
+            # Receive incoming data from the frontend
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+            except json.JSONDecodeError:
+                continue # Skip malformed payloads
+            
+            exercise = message.get("exercise", "unknown")
+            frame_data = message.get("frame_data")
+            
+            if not frame_data:
+                continue
+                
+            # Process the frame through the pose service
+            feedback = await process_base64_frame(frame_data, exercise)
+            
+            # Send results back through the same persistent connection
+            await websocket.send_json(feedback)
+            
+    except WebSocketDisconnect:
+        print("🔌 WebSocket session ended")
+    except Exception as e:
+        print(f"❌ WebSocket error: {str(e)}")
+        try:
+            await websocket.send_json({"feedback_text": "Internal processing error", "is_rep_valid": False})
+        except:
+            pass

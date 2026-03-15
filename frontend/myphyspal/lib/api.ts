@@ -163,31 +163,75 @@ export const submitMetrics = async (
 };
 
 /**
- * 4. Evaluate exercise form (live feedback, no DB calls)
- * POST /api/evaluate-form
- *
+ * 4. WebSocket management for real-time form evaluation
+ * Path: ws://[API_BASE_URL]/ws/evaluate-form
+ * 
  * Usage:
- *   const formFeedback = await evaluateForm("user-uuid", "Knee Extension", [85.5, 90.2]);
+ *   const poseWS = new PoseWebSocket();
+ *   poseWS.connect();
+ *   poseWS.onMessage((feedback) => console.log(feedback));
+ *   poseWS.sendFrame("user-uuid", "Knee Extension", "base64-data");
  */
-export const evaluateForm = async (
-    userId: string,
-    exercise: string,
-    angles: number[]
-): Promise<FormEvaluationResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/evaluate-form`, {
-        method: "POST",
-        headers: await getHeaders(),
-        body: JSON.stringify({
-            user_id: userId,
-            exercise: exercise,
-            angles: angles,
-        }),
-    });
+export class PoseWebSocket {
+    private socket: WebSocket | null = null;
+    private baseUrl: string;
 
-    if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Failed to evaluate form: ${response.status} - ${errorBody}`);
+    constructor() {
+        // Convert HTTP/HTTPS URL to WS/WSS
+        this.baseUrl = API_BASE_URL.replace(/^http/, 'ws');
     }
 
-    return response.json();
-};
+    /**
+     * Opens the persistent connection to the AI pose engine
+     */
+    connect() {
+        if (this.socket) return;
+        this.socket = new WebSocket(`${this.baseUrl}/ws/evaluate-form`);
+        
+        this.socket.onopen = () => console.log('📡 Connected to AI Pose Engine');
+        this.socket.onerror = (e) => console.error('❌ WebSocket Error:', e);
+        this.socket.onclose = () => {
+            console.log('🔌 Disconnected from AI Pose Engine');
+            this.socket = null;
+        };
+    }
+
+    /**
+     * Streams a base64 encoded image frame to the server
+     */
+    sendFrame(userId: string, exercise: string, base64Frame: string) {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                user_id: userId,
+                exercise: exercise,
+                frame_data: base64Frame
+            }));
+        }
+    }
+
+    /**
+     * Registers a callback to handle real-time feedback messages
+     */
+    onMessage(callback: (feedback: FormEvaluationResponse) => void) {
+        if (this.socket) {
+            this.socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    callback(data);
+                } catch (e) {
+                    console.error("Failed to parse WebSocket message", e);
+                }
+            };
+        }
+    }
+
+    /**
+     * Gracefully closes the connection
+     */
+    disconnect() {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+    }
+}

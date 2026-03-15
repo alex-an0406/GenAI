@@ -3,3 +3,6 @@ uvicorn
 pydantic
 supabase
 python-dotenv
+mediapipe
+opencv-python-headless
+numpy
