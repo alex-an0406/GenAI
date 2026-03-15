@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as WebBrowser from 'expo-web-browser';
-import { createProfile } from './profile';
+//import { createProfile } from './profile';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -56,9 +56,9 @@ async function createSessionFromUrl(url: string) {
     if (error) throw error;
 
     // Create profile for new users
-    if (data.user) {
-        await createProfile(data.user.id, data.user.email ?? '');
-    }
+    //if (data.user) {
+      //  await createProfile(data.user.id, data.user.email ?? '');
+    //}
 
     return data.session;
 }

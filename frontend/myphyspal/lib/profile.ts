@@ -7,6 +7,9 @@ export interface Profile {
     age?: number;
     weight_kg?: number;
     height_cm?: number;
+    gender?: string;
+    surgery_history?: string;
+    time_since_injury_days?: number;
     has_diagnosis?: boolean;
     diagnosis?: string;
     pain_description?: string;
@@ -14,30 +17,23 @@ export interface Profile {
     onboarding_completed?: boolean;
 }
 
-// Create empty profile after sign in
-export async function createProfile(userId: string, email: string) {
-    // First check if profile already exists
-    const { data: existing } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', userId)
-        .single();
-
-    // Only create if it doesn't exist
-    if (!existing) {
-        const { data, error } = await supabase
-            .from('profiles')
-            .insert([{ id: userId, email }]);
-
-        if (error) throw error;
-        return data;
-    }
-
-    return existing;
+// Fields the user can edit from the profile screen
+export interface ProfileUpdate {
+    name?: string;
+    age?: number;
+    weight_kg?: number;
+    height_cm?: number;
+    gender?: string;
+    surgery_history?: string;
+    time_since_injury_days?: number;
+    has_diagnosis?: boolean;
+    diagnosis?: string;
+    pain_description?: string;
+    pain_level?: number;
 }
 
 // Get a user's profile
-export async function getProfile(userId: string) {
+export async function getProfile(userId: string): Promise<Profile> {
     const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -48,38 +44,20 @@ export async function getProfile(userId: string) {
     return data as Profile;
 }
 
-// Save onboarding data
-export async function saveOnboardingData(
-    userId: string,
-    onboardingData: {
-        name: string;
-        age: string;
-        weight: string;
-        height: string;
-        hasDiagnosis: boolean;
-        diagnosis: string;
-        painDescription: string;
-        painLevel: number;
-    }
-) {
+// Update profile fields
+export async function updateProfile(userId: string, updates: ProfileUpdate): Promise<Profile> {
     const { data, error } = await supabase
         .from('profiles')
         .update({
-            name: onboardingData.name,
-            age: parseInt(onboardingData.age) || null,
-            weight_kg: parseFloat(onboardingData.weight) || null,
-            height_cm: parseFloat(onboardingData.height) || null,
-            has_diagnosis: onboardingData.hasDiagnosis,
-            diagnosis: onboardingData.diagnosis || null,
-            pain_description: onboardingData.painDescription || null,
-            pain_level: onboardingData.painLevel,
-            onboarding_completed: true,
+            ...updates,
             updated_at: new Date().toISOString(),
         })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select()
+        .single();
 
     if (error) throw error;
-    return data;
+    return data as Profile;
 }
 
 // Check if user has completed onboarding

@@ -21,13 +21,11 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
-    // Check current session on app load
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
@@ -37,7 +35,6 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle routing based on auth state
   useEffect(() => {
     if (isLoading) return;
 
@@ -45,14 +42,11 @@ export default function RootLayout() {
     const inOnboarding = segments[0] === 'onboarding';
 
     if (!session) {
-      // Not logged in → go to login
       if (!inAuthGroup) {
         router.replace('/login');
       }
     } else {
-      // Logged in → check onboarding status
       if (inAuthGroup) {
-        // They just logged in, check if they need onboarding
         checkAndRoute(session.user.id);
       }
     }
@@ -67,7 +61,6 @@ export default function RootLayout() {
     }
   }
 
-  // Show loading screen while checking auth
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212' }}>
