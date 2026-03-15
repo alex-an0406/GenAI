@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { StyleSheet, TextInput, ScrollView, TouchableOpacity, View, Alert, KeyboardAvoidingView, Platform, Modal, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -10,11 +10,16 @@ import { generatePlan, UserProfile } from '../lib/api';
 
 type OnboardingState = 'ASK_DIAGNOSIS' | 'FORM';
 
+const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
+
 export default function OnboardingScreen() {
   const { setProfile, setActivePlan } = useAppStore();
   const [step, setStep] = useState<OnboardingState>('ASK_DIAGNOSIS');
   const [hasDiagnosis, setHasDiagnosis] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
+  const [genderLayout, setGenderLayout] = useState({ top: 0, left: 0, width: 0 });
+  const genderRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   
   const [formData, setFormData] = useState({
     age: '',
@@ -27,6 +32,17 @@ export default function OnboardingScreen() {
     painDescription: '',
     painLevel: 5,
   });
+
+  const openGenderPicker = () => {
+    genderRef.current?.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
+      setGenderLayout({
+        top: pageY + height,
+        left: pageX,
+        width: width,
+      });
+      setShowGenderPicker(true);
+    });
+  };
 
   const handleDiagnosisChoice = (choice: boolean) => {
     setHasDiagnosis(choice);
@@ -158,13 +174,14 @@ export default function OnboardingScreen() {
             </ThemedView>
             <ThemedView style={[styles.inputGroup, { flex: 1 }]}>
               <ThemedText type="defaultSemiBold">Gender</ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="Male/Female/Other"
-                placeholderTextColor="#888"
-                value={formData.gender}
-                onChangeText={(t) => setFormData({ ...formData, gender: t })}
-              />
+              <TouchableOpacity 
+                ref={genderRef}
+                style={styles.dropdownTrigger}
+                onPress={openGenderPicker}
+              >
+                <ThemedText style={styles.dropdownText}>{formData.gender}</ThemedText>
+                <IconSymbol size={16} name="chevron.down" color="#888" />
+              </TouchableOpacity>
             </ThemedView>
           </View>
 
@@ -246,6 +263,50 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </ThemedView>
       </ScrollView>
+
+      {/* Localized Gender Picker Modal */}
+      <Modal
+        visible={showGenderPicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowGenderPicker(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGenderPicker(false)}
+        >
+          <View style={[
+            styles.localizedPicker, 
+            { 
+              top: genderLayout.top, 
+              left: genderLayout.left, 
+              width: genderLayout.width 
+            }
+          ]}>
+            <FlatList
+              data={GENDER_OPTIONS}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.localizedOption}
+                  onPress={() => {
+                    setFormData({ ...formData, gender: item });
+                    setShowGenderPicker(false);
+                  }}
+                >
+                  <ThemedText style={[
+                    styles.optionText,
+                    formData.gender === item && { color: '#007AFF', fontWeight: 'bold' }
+                  ]}>
+                    {item}
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -323,6 +384,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  dropdownTrigger: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 48,
+  },
+  dropdownText: {
+    color: '#fff',
+  },
   row: {
     flexDirection: 'row',
     gap: 15,
@@ -363,5 +438,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  localizedPicker: {
+    position: 'absolute',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+    overflow: 'hidden',
+  },
+  localizedOption: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  optionText: {
+    fontSize: 14,
   },
 });
